@@ -2,6 +2,7 @@ package buffer
 
 import (
 	"github.com/zyedidia/micro/v2/internal/util"
+	"go.lsp.dev/protocol"
 )
 
 // Loc stores a location
@@ -45,6 +46,11 @@ func (l Loc) LessEqual(b Loc) bool {
 		return true
 	}
 	return l == b
+}
+
+// Equal returns true if two locs are equal
+func (l Loc) Equal(b Loc) bool {
+	return l.Y == b.Y && l.X == b.X
 }
 
 // The following functions require a buffer to know where newlines are
@@ -145,4 +151,11 @@ func clamp(pos Loc, la *LineArray) Loc {
 		return la.Start()
 	}
 	return pos
+}
+
+func toLoc(r protocol.Position) Loc {
+	return Loc{
+		X: int(r.Character),
+		Y: int(r.Line),
+	}
 }

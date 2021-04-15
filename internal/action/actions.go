@@ -14,7 +14,9 @@ import (
 	"github.com/zyedidia/micro/v2/internal/screen"
 	"github.com/zyedidia/micro/v2/internal/shell"
 	"github.com/zyedidia/micro/v2/internal/util"
+	"github.com/zyedidia/micro/v2/internal/lsp"
 	"github.com/zyedidia/tcell/v2"
+	"go.lsp.dev/protocol"
 )
 
 // ScrollUp is not an action
@@ -703,6 +705,13 @@ func (h *BufPane) Autocomplete() bool {
 		return false
 	}
 
+	// if there is an existing completion, always cycle it
+	if b.HasSuggestions {
+		h.cycleAutocomplete(true)
+		return true
+	}
+
+	// don't start a new completion unless the correct conditions are met
 	if h.Cursor.X == 0 {
 		return false
 	}
@@ -712,12 +721,14 @@ func (h *BufPane) Autocomplete() bool {
 		// don't autocomplete if cursor is on alpha numeric character (middle of a word)
 		return false
 	}
-
-	if b.HasSuggestions {
-		b.CycleAutocomplete(true)
-		return true
+	ret := true
+	if !b.Autocomplete(buffer.LSPComplete) {
+		ret = b.Autocomplete(buffer.BufferComplete)
 	}
-	return b.Autocomplete(buffer.BufferComplete)
+	if ret {
+		h.displayCompletionDoc()
+	}
+	return true
 }
 
 // CycleAutocompleteBack cycles back in the autocomplete suggestion list
@@ -727,10 +738,22 @@ func (h *BufPane) CycleAutocompleteBack() bool {
 	}
 
 	if h.Buf.HasSuggestions {
-		h.Buf.CycleAutocomplete(false)
+		h.cycleAutocomplete(false)
 		return true
 	}
 	return false
+}
+
+func (h *BufPane) cycleAutocomplete(forward bool) {
+	h.Buf.CycleAutocomplete(forward)
+	h.displayCompletionDoc()
+}
+
+func (h *BufPane) displayCompletionDoc() {
+	c := h.Buf.CurCompletion
+	if c >= 0 && c < len(h.Buf.Completions) {
+		InfoBar.Message(h.Buf.Completions[c].Doc)
+	}
 }
 
 // InsertTab inserts a tab or spaces
@@ -1829,6 +1852,52 @@ func (h *BufPane) RemoveAllMultiCursors() bool {
 	h.Buf.ClearCursors()
 	h.multiWord = false
 	h.Relocate()
+	return true
+}
+
+// SemanticInfo returns information about the identifier the cursor is on and
+// displays the information in the infobar
+// The information is fetched using the LSP server (must be enabled)
+func (h *BufPane) SemanticInfo() bool {
+	info, err := h.Buf.Server.Hover(h.Buf.AbsPath, lsp.Position(h.Cursor.X, h.Cursor.Y))
+
+	if err != nil {
+		InfoBar.Error(err)
+		return false
+	}
+
+	info = strings.Split(info, "\n")[0]
+
+	InfoBar.Message(info)
+	return true
+}
+
+// AutoFormat automatically formats the document using LSP
+func (h *BufPane) AutoFormat() bool {
+	var err error
+	var edits []protocol.TextEdit
+
+	if h.Cursor.HasSelection() {
+		edits, err = h.Buf.Server.DocumentRangeFormat(h.Buf.AbsPath, protocol.Range{
+			Start: lsp.Position(h.Cursor.CurSelection[0].X, h.Cursor.CurSelection[0].Y),
+			End:   lsp.Position(h.Cursor.CurSelection[1].X, h.Cursor.CurSelection[1].Y),
+		}, protocol.FormattingOptions{
+			InsertSpaces: h.Buf.Settings["tabstospaces"].(bool),
+			TabSize:      h.Buf.Settings["tabsize"].(float64),
+		})
+	} else {
+		edits, err = h.Buf.Server.DocumentFormat(h.Buf.AbsPath, protocol.FormattingOptions{
+			InsertSpaces: h.Buf.Settings["tabstospaces"].(bool),
+			TabSize:      h.Buf.Settings["tabsize"].(float64),
+		})
+	}
+
+	if err != nil {
+		InfoBar.Error(err)
+		return false
+	}
+
+	h.Buf.ApplyEdits(edits)
 	return true
 }
 

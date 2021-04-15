@@ -13,6 +13,7 @@ function init()
     micro.SetStatusInfoFn("status.lines")
     micro.SetStatusInfoFn("status.bytes")
     micro.SetStatusInfoFn("status.size")
+    micro.SetStatusInfoFn("status.lsp")
     config.AddRuntimeFile("status", config.RTHelp, "help/status.md")
 end
 
@@ -30,6 +31,25 @@ end
 
 function size(b)
     return humanize.Bytes(b:Size())
+end
+
+function lsp(b)
+    if not b.Settings["lsp"] then
+        return "disabled"
+    end
+    if b:HasLSP() then
+        return "on"
+    end
+
+    local lsp = import("micro/lsp")
+    local l, ok = lsp.GetLanguage(b.Settings["filetype"])
+    if not ok then
+        return "unsupported"
+    end
+    if not l:Installed() then
+        return l.Command .. " not installed"
+    end
+    return "off"
 end
 
 function branch(b)

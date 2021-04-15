@@ -2,6 +2,7 @@ package buffer
 
 import (
 	"bytes"
+	"log"
 	"time"
 
 	dmp "github.com/sergi/go-diff/diffmatchpatch"
@@ -52,6 +53,7 @@ func (eh *EventHandler) DoTextEvent(t *TextEvent, useUndo bool) {
 	}
 
 	if len(t.Deltas) != 1 {
+		log.Println("Multiple deltas not supported")
 		return
 	}
 
@@ -228,6 +230,12 @@ func (eh *EventHandler) MultipleReplace(deltas []Delta) {
 func (eh *EventHandler) Replace(start, end Loc, replace string) {
 	eh.Remove(start, end)
 	eh.Insert(start, replace)
+}
+
+// ReplaceBytes deletes from start to end and replaces it with the given string
+func (eh *EventHandler) ReplaceBytes(start, end Loc, replace []byte) {
+	eh.Remove(start, end)
+	eh.InsertBytes(start, replace)
 }
 
 // Execute a textevent and add it to the undo stack

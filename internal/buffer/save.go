@@ -195,5 +195,10 @@ func (b *Buffer) saveToFile(filename string, withSudo bool) error {
 	b.AbsPath = absPath
 	b.isModified = false
 	b.UpdateRules()
+
+	if b.HasLSP() {
+		b.Server.DidSave(b.AbsPath)
+	}
+
 	return err
 }

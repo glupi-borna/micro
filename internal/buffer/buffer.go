@@ -10,24 +10,27 @@ import (
 	"io/ioutil"
 	"os"
 	"path"
+	gopath "path"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	luar "layeh.com/gopher-luar"
-
 	dmp "github.com/sergi/go-diff/diffmatchpatch"
 	"github.com/zyedidia/micro/v2/internal/config"
+	"github.com/zyedidia/micro/v2/internal/lsp"
 	ulua "github.com/zyedidia/micro/v2/internal/lua"
 	"github.com/zyedidia/micro/v2/internal/screen"
 	"github.com/zyedidia/micro/v2/internal/util"
 	"github.com/zyedidia/micro/v2/pkg/highlight"
+	lspt "go.lsp.dev/protocol"
 	"golang.org/x/text/encoding/htmlindex"
 	"golang.org/x/text/encoding/unicode"
 	"golang.org/x/text/transform"
+	luar "layeh.com/gopher-luar"
 )
 
 const backupTime = 8000
@@ -91,9 +94,8 @@ type SharedBuffer struct {
 	// Settings customized by the user
 	Settings map[string]interface{}
 
-	Suggestions   []string
-	Completions   []string
-	CurSuggestion int
+	Completions   []Completion
+	CurCompletion int
 
 	Messages []*Message
 
@@ -124,6 +126,9 @@ type SharedBuffer struct {
 
 	// Hash of the original buffer -- empty if fastdirty is on
 	origHash [md5.Size]byte
+
+	Server  *lsp.Server
+	version uint64
 }
 
 func (b *SharedBuffer) insert(pos Loc, value []byte) {
@@ -133,12 +138,37 @@ func (b *SharedBuffer) insert(pos Loc, value []byte) {
 
 	inslines := bytes.Count(value, []byte{'\n'})
 	b.MarkModified(pos.Y, pos.Y+inslines)
+
+	b.lspDidChange(pos, pos, string(value))
 }
 func (b *SharedBuffer) remove(start, end Loc) []byte {
 	b.isModified = true
 	b.HasSuggestions = false
 	defer b.MarkModified(start.Y, end.Y)
-	return b.LineArray.remove(start, end)
+	sub := b.LineArray.remove(start, end)
+	b.lspDidChange(start, end, "")
+	return sub
+}
+
+func (b *SharedBuffer) lspDidChange(start, end Loc, text string) {
+	b.version++
+	// TODO: convert to UTF16 codepoints
+	change := lspt.TextDocumentContentChangeEvent{
+		Range: &lspt.Range{
+			Start: lsp.Position(start.X, start.Y),
+			End:   lsp.Position(end.X, end.Y),
+		},
+		Text: text,
+	}
+
+	if b.HasLSP() {
+		b.Server.DidChange(b.AbsPath, b.version, []lspt.TextDocumentContentChangeEvent{change})
+	}
+}
+
+// HasLSP returns whether this buffer is communicating with an LSP server
+func (b *SharedBuffer) HasLSP() bool {
+	return b.Server != nil && b.Server.Active
 }
 
 // MarkModified marks the buffer as modified for this frame
@@ -407,7 +437,38 @@ func NewBuffer(r io.Reader, size int64, path string, startcursor Loc, btype BufT
 
 	OpenBuffers = append(OpenBuffers, b)
 
+	if !found {
+		if btype == BTDefault && b.Settings["lsp"].(bool) {
+			b.lspInit()
+		}
+	}
+
 	return b
+}
+
+// initializes an LSP server if possible, or calls didOpen on an existing
+// LSP server in this workspace
+func (b *Buffer) lspInit() {
+	ft := lsp.Filetype(b.Settings["filetype"].(string))
+	l, ok := lsp.GetLanguage(ft)
+	if ok && l.Installed() {
+		b.Server = lsp.GetServer(l, gopath.Dir(b.AbsPath))
+		if b.Server == nil {
+			var err error
+			b.Server, err = lsp.StartServer(l)
+			if err == nil {
+				d, _ := os.Getwd()
+				b.Server.Initialize(d)
+			}
+		}
+		if b.HasLSP() {
+			bytes := b.Bytes()
+			if len(bytes) == 0 {
+				bytes = []byte{'\n'}
+			}
+			b.Server.DidOpen(b.AbsPath, ft, string(bytes), b.version)
+		}
+	}
 }
 
 // Close removes this buffer from the list of open buffers
@@ -436,6 +497,9 @@ func (b *Buffer) Fini() {
 	}
 
 	atomic.StoreInt32(&(b.fini), int32(1))
+	if b.HasLSP() {
+		b.Server.DidClose(b.AbsPath)
+	}
 }
 
 // GetName returns the name that should be displayed in the statusline
@@ -467,6 +531,7 @@ func (b *Buffer) Insert(start Loc, text string) {
 		b.EventHandler.Insert(start, text)
 
 		b.RequestBackup()
+		b.RelocateCursors()
 	}
 }
 
@@ -478,6 +543,68 @@ func (b *Buffer) Remove(start, end Loc) {
 		b.EventHandler.Remove(start, end)
 
 		b.RequestBackup()
+		b.RelocateCursors()
+	}
+}
+
+// ApplyEdit performs a LSP text edit on the buffer
+func (b *Buffer) ApplyEdit(e lspt.TextEdit) {
+	if len(e.NewText) == 0 {
+		// deletion
+		b.Remove(toLoc(e.Range.Start), toLoc(e.Range.End))
+	} else {
+		// insert/replace
+		b.Replace(toLoc(e.Range.Start), toLoc(e.Range.End), e.NewText)
+	}
+}
+
+func (b *Buffer) ApplyEdits(edits []lspt.TextEdit) {
+	if !b.Type.Readonly {
+		locs := make([]struct {
+			t          string
+			start, end Loc
+		}, len(edits))
+		for i, e := range edits {
+			locs[i] = struct {
+				t          string
+				start, end Loc
+			}{
+				t:     e.NewText,
+				start: toLoc(e.Range.Start),
+				end:   toLoc(e.Range.End),
+			}
+		}
+		// Since edit ranges are guaranteed by LSP to never overlap we can sort
+		// by last edit first and apply each edit in order
+		// Perhaps in the future we should make this more robust to a non-conforming
+		// server that sends overlapping ranges
+		sort.Slice(locs, func(i, j int) bool {
+			return locs[i].start.GreaterThan(locs[j].start)
+		})
+		for _, d := range locs {
+			if len(d.t) == 0 {
+				b.Remove(d.start, d.end)
+			} else {
+				b.Replace(d.start, d.end, d.t)
+			}
+		}
+		b.RelocateCursors()
+	}
+}
+
+func (b *Buffer) ApplyDeltas(deltas []Delta) {
+	if !b.Type.Readonly {
+		sort.Slice(deltas, func(i, j int) bool {
+			return deltas[i].Start.GreaterThan(deltas[j].Start)
+		})
+		for _, d := range deltas {
+			if len(d.Text) == 0 {
+				b.Remove(d.Start, d.End)
+			} else {
+				b.ReplaceBytes(d.Start, d.End, d.Text)
+			}
+		}
+		b.RelocateCursors()
 	}
 }
 

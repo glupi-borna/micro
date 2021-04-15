@@ -17,7 +17,8 @@ type BufWindow struct {
 	*View
 
 	// Buffer being shown in this window
-	Buf *buffer.Buffer
+	Buf         *buffer.Buffer
+	completeBox buffer.Loc
 
 	active bool
 
@@ -548,6 +549,13 @@ func (w *BufWindow) displayBuffer() {
 
 				screen.SetContent(w.X+vloc.X, w.Y+vloc.Y, r, combc, style)
 
+				if w.Buf.HasSuggestions && len(w.Buf.Completions) > 0 {
+					compl := w.Buf.Completions[0].Edits[0].Start
+					if bloc.X == compl.X && bloc.Y == compl.Y {
+						w.completeBox = buffer.Loc{w.X + vloc.X, w.Y + vloc.Y}
+					}
+				}
+
 				if showcursor {
 					for _, c := range cursors {
 						if c.X == bloc.X && c.Y == bloc.Y && !c.HasSelection() {
@@ -757,6 +765,56 @@ func (w *BufWindow) displayScrollBar() {
 	}
 }
 
+func (w *BufWindow) displayCompleteBox() {
+	if !w.Buf.HasSuggestions || w.Buf.NumCursors() > 1 {
+		return
+	}
+
+	labelw := 0
+	detailw := 0
+	kindw := 0
+	for _, comp := range w.Buf.Completions {
+		charcount := util.CharacterCountInString(comp.Label)
+		if charcount > labelw {
+			labelw = charcount
+		}
+		charcount = util.CharacterCountInString(comp.Detail)
+		if charcount > detailw {
+			detailw = charcount
+		}
+		charcount = util.CharacterCountInString(comp.Kind)
+		if charcount > kindw {
+			kindw = charcount
+		}
+	}
+	labelw++
+	kindw++
+
+	display := func(s string, width, x, y int, cur bool) {
+		for j := 0; j < width; j++ {
+			r := ' '
+			var combc []rune
+			var size int
+			if len(s) > 0 {
+				r, combc, size = util.DecodeCharacterInString(s)
+				s = s[size:]
+			}
+			st := config.DefStyle.Reverse(true)
+			if cur {
+				st = st.Reverse(false)
+			}
+			screen.SetContent(w.completeBox.X+x+j, w.completeBox.Y+y, r, combc, st)
+		}
+	}
+
+	for i, comp := range w.Buf.Completions {
+		cur := i == w.Buf.CurCompletion
+		display(comp.Label+" ", labelw, 0, i+1, cur)
+		display(comp.Kind+" ", kindw, labelw, i+1, cur)
+		display(comp.Detail, detailw, labelw+kindw, i+1, cur)
+	}
+}
+
 // Display displays the buffer and the statusline
 func (w *BufWindow) Display() {
 	w.updateDisplayInfo()
@@ -764,4 +822,5 @@ func (w *BufWindow) Display() {
 	w.displayStatusLine()
 	w.displayScrollBar()
 	w.displayBuffer()
+	w.displayCompleteBox()
 }

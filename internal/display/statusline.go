@@ -100,40 +100,6 @@ func (s *StatusLine) Display() {
 
 	winX := s.win.X
 
-	b := s.win.Buf
-	// autocomplete suggestions (for the buffer, not for the infowindow)
-	if b.HasSuggestions && len(b.Suggestions) > 1 {
-		statusLineStyle := config.DefStyle.Reverse(true)
-		if style, ok := config.Colorscheme["statusline"]; ok {
-			statusLineStyle = style
-		}
-		x := 0
-		for j, sug := range b.Suggestions {
-			style := statusLineStyle
-			if b.CurSuggestion == j {
-				style = style.Reverse(true)
-			}
-			for _, r := range sug {
-				screen.SetContent(winX+x, y, r, nil, style)
-				x++
-				if x >= s.win.Width {
-					return
-				}
-			}
-			screen.SetContent(winX+x, y, ' ', nil, statusLineStyle)
-			x++
-			if x >= s.win.Width {
-				return
-			}
-		}
-
-		for x < s.win.Width {
-			screen.SetContent(winX+x, y, ' ', nil, statusLineStyle)
-			x++
-		}
-		return
-	}
-
 	formatter := func(match []byte) []byte {
 		name := match[2 : len(match)-1]
 		if bytes.HasPrefix(name, []byte("opt")) {

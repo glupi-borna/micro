@@ -21,6 +21,7 @@ import (
 	"github.com/zyedidia/micro/v2/internal/buffer"
 	"github.com/zyedidia/micro/v2/internal/clipboard"
 	"github.com/zyedidia/micro/v2/internal/config"
+	"github.com/zyedidia/micro/v2/internal/lsp"
 	ulua "github.com/zyedidia/micro/v2/internal/lua"
 	"github.com/zyedidia/micro/v2/internal/screen"
 	"github.com/zyedidia/micro/v2/internal/shell"
@@ -219,6 +220,8 @@ func LoadInput(args []string) []*buffer.Buffer {
 
 func main() {
 	defer func() {
+		lsp.ShutdownAllServers()
+
 		if util.Stdout.Len() > 0 {
 			fmt.Fprint(os.Stdout, util.Stdout.String())
 		}
@@ -247,6 +250,11 @@ func main() {
 		screen.TermMessage(err)
 	}
 	err = config.InitGlobalSettings()
+	if err != nil {
+		screen.TermMessage(err)
+	}
+
+	err = lsp.Init()
 	if err != nil {
 		screen.TermMessage(err)
 	}
@@ -407,6 +415,7 @@ func DoEvent() {
 	action.MainTab().Display()
 	action.InfoBar.Display()
 	screen.Screen.Show()
+	action.InfoBar.Message("")
 
 	// Check for new events
 	select {

@@ -273,6 +273,7 @@ var defaultCommonSettings = map[string]interface{}{
 	"ignorecase":     true,
 	"indentchar":     " ",
 	"keepautoindent": false,
+	"lsp":            true,
 	"matchbrace":     true,
 	"mkparents":      false,
 	"permbackup":     false,
