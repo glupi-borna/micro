@@ -926,7 +926,7 @@ func (h *BufPane) find(useRegex bool) bool {
 			h.Relocate()
 		}
 	}
-	InfoBar.Prompt(prompt, "", "Find", eventCallback, func(resp string, canceled bool) {
+	findCallback := func(resp string, canceled bool) {
 		// Finished callback
 		if !canceled {
 			match, found, err := h.Buf.FindNext(resp, h.Buf.Start(), h.Buf.End(), h.searchOrig, true, useRegex)
@@ -949,8 +949,12 @@ func (h *BufPane) find(useRegex bool) bool {
 			h.Cursor.ResetSelection()
 		}
 		h.Relocate()
-	})
-
+	}
+	pattern := string(h.Cursor.GetSelection())
+	if eventCallback != nil && pattern != "" {
+		eventCallback(pattern)
+	}
+	InfoBar.Prompt(prompt, pattern, "Find", eventCallback, findCallback)
 	return true
 }
 
