@@ -259,20 +259,16 @@ func (w *BufWindow) LocFromVisual(svloc buffer.Loc) buffer.Loc {
 	return w.LocFromVLoc(vloc)
 }
 
-func (w *BufWindow) drawGutter(vloc *buffer.Loc, bloc *buffer.Loc) {
-	char := ' '
-	s := config.DefStyle
-	for _, m := range w.Buf.Messages {
-		if m.Start.Y == bloc.Y || m.End.Y == bloc.Y {
-			s = m.Style()
-			char = '>'
-			break
+func (w *BufWindow) hasMessageAt(vloc *buffer.Loc, bloc *buffer.Loc) (bool, tcell.Style) {
+	if w.hasMessage {
+		for _, m := range w.Buf.Messages {
+			if m.Start.Y == bloc.Y || m.End.Y == bloc.Y {
+				return true, m.Style()
+			}
 		}
 	}
-	screen.SetContent(w.X+vloc.X, w.Y+vloc.Y, char, nil, s)
-	vloc.X++
-	screen.SetContent(w.X+vloc.X, w.Y+vloc.Y, char, nil, s)
-	vloc.X++
+
+	return false, config.DefStyle
 }
 
 func (w *BufWindow) drawDiffGutter(backgroundStyle tcell.Style, softwrapped bool, vloc *buffer.Loc, bloc *buffer.Loc) {
@@ -459,15 +455,16 @@ func (w *BufWindow) displayBuffer() {
 		}
 
 		if vloc.Y >= 0 {
-			if w.hasMessage {
-				w.drawGutter(&vloc, &bloc)
-			}
-
 			if b.Settings["diffgutter"].(bool) {
 				w.drawDiffGutter(s, false, &vloc, &bloc)
 			}
 
 			if b.Settings["ruler"].(bool) {
+				hasMsg, msgStyle := w.hasMessageAt(&vloc, &bloc)
+				if hasMsg {
+					s = msgStyle
+				}
+
 				w.drawLineNum(s, false, &vloc, &bloc)
 			}
 		} else {
@@ -480,7 +477,7 @@ func (w *BufWindow) displayBuffer() {
 		}
 		bloc.X = bslice
 
-		draw := func(r rune, combc []rune, style tcell.Style, highlight bool, showcursor bool) {
+		draw := func(r rune, combc []rune, style tcell.Style, highlight bool, showcursor bool, tabstart bool) {
 			if nColsBeforeStart <= 0 && vloc.Y >= 0 {
 				if highlight {
 					_, origBg, _ := style.Decompose()
@@ -519,7 +516,7 @@ func (w *BufWindow) displayBuffer() {
 						}
 					}
 
-					if r == '\t' {
+					if (tabstart && r == ' ') || r == '\t' {
 						indentrunes := []rune(b.Settings["indentchar"].(string))
 						// if empty indentchar settings, use space
 						if len(indentrunes) == 0 {
@@ -572,16 +569,18 @@ func (w *BufWindow) displayBuffer() {
 
 		wrap := func() {
 			vloc.X = 0
-			if w.hasMessage {
-				w.drawGutter(&vloc, &bloc)
-			}
 			if b.Settings["diffgutter"].(bool) {
 				w.drawDiffGutter(lineNumStyle, true, &vloc, &bloc)
 			}
 
 			// This will draw an empty line number because the current line is wrapped
 			if b.Settings["ruler"].(bool) {
-				w.drawLineNum(lineNumStyle, true, &vloc, &bloc)
+				hasMsg, msgStyle := w.hasMessageAt(&vloc, &bloc)
+				if hasMsg {
+					w.drawLineNum(msgStyle, true, &vloc, &bloc)
+				} else {
+					w.drawLineNum(lineNumStyle, true, &vloc, &bloc)
+				}
 			}
 		}
 
@@ -601,6 +600,8 @@ func (w *BufWindow) displayBuffer() {
 		wordwidth := 0
 
 		totalwidth := w.StartCol - nColsBeforeStart
+		whiteSpace := true
+
 		for len(line) > 0 {
 			r, combc, size := util.DecodeCharacter(line)
 			line = line[size:]
@@ -615,7 +616,13 @@ func (w *BufWindow) displayBuffer() {
 				ts := tabsize - (totalwidth % tabsize)
 				width = util.Min(ts, maxWidth-vloc.X)
 				totalwidth += ts
+
+			case ' ':
+				width = runewidth.RuneWidth(r)
+				totalwidth += width
+
 			default:
+				whiteSpace = false
 				width = runewidth.RuneWidth(r)
 				totalwidth += width
 			}
@@ -631,10 +638,12 @@ func (w *BufWindow) displayBuffer() {
 				}
 			}
 
+			tabstart := whiteSpace && (vloc.X + 1) % tabsize == 0
 			// If a word (or just a wide rune) does not fit in the window
 			if vloc.X+wordwidth > maxWidth && vloc.X > w.gutterOffset {
 				for vloc.X < maxWidth {
-					draw(' ', nil, config.DefStyle, false, false)
+					tabstart = whiteSpace && (vloc.X - w.gutterOffset) % tabsize == 0
+					draw(' ', nil, config.DefStyle, false, false, tabstart)
 				}
 
 				// We either stop or we wrap to draw the word in the next line
@@ -650,7 +659,8 @@ func (w *BufWindow) displayBuffer() {
 			}
 
 			for _, r := range word {
-				draw(r.r, r.combc, r.style, true, true)
+				tabstart = whiteSpace && (vloc.X - w.gutterOffset) % tabsize == 0
+				draw(r.r, r.combc, r.style, true, true, tabstart)
 
 				// Draw any extra characters either spaces for tabs or @ for incomplete wide runes
 				if r.width > 1 {
@@ -660,7 +670,8 @@ func (w *BufWindow) displayBuffer() {
 					}
 
 					for i := 1; i < r.width; i++ {
-						draw(char, nil, r.style, true, false)
+						tabstart = whiteSpace && (vloc.X - w.gutterOffset) % tabsize == 0
+						draw(char, nil, r.style, true, false, tabstart)
 					}
 				}
 				bloc.X++
@@ -706,7 +717,7 @@ func (w *BufWindow) displayBuffer() {
 
 		if vloc.X != maxWidth {
 			// Display newline within a selection
-			draw(' ', nil, config.DefStyle, true, true)
+			draw(' ', nil, config.DefStyle, true, true, false)
 		}
 
 		bloc.X = w.StartCol
