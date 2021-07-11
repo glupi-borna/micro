@@ -136,9 +136,6 @@ func (w *BufWindow) updateDisplayInfo() {
 	w.maxLineNumLength = len(strconv.Itoa(b.LinesNum()))
 
 	w.gutterOffset = 0
-	if w.hasMessage {
-		w.gutterOffset += 2
-	}
 	if b.Settings["diffgutter"].(bool) {
 		w.gutterOffset++
 	}
