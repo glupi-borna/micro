@@ -9,6 +9,7 @@ type MsgType int
 
 const (
 	MTInfo = iota
+	MTMark
 	MTWarning
 	MTError
 )
@@ -69,6 +70,10 @@ func (b *Buffer) removeMsg(i int) {
 	copy(b.Messages[i:], b.Messages[i+1:])
 	b.Messages[len(b.Messages)-1] = nil
 	b.Messages = b.Messages[:len(b.Messages)-1]
+}
+
+func (b *Buffer) RemoveMessage(i int) {
+	b.removeMsg(i)
 }
 
 func (b *Buffer) ClearMessages(owner string) {

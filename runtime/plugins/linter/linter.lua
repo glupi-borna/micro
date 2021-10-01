@@ -70,7 +70,8 @@ function preinit()
     makeLinter("dmd", "d", "dmd", {"-color=off", "-o-", "-w", "-wi", "-c", "%f"}, "%f%(%l%):.+: %m")
     makeLinter("eslint", "javascript", "eslint", {"-f","compact","%f"}, "%f: line %l, col %c, %m")
     makeLinter("gobuild", "go", "go", {"build", "-o", devnull, "%d"}, "%f:%l:%c:? %m")
-    -- makeLinter("golint", "go", "golint", {"%f"}, "%f:%l:%c: %m")
+    makeLinter("govet", "go", "go", {"vet"}, "%f:%l:%c: %m")
+    makeLinter("clippy", "rust", "cargo", {"clippy", "--message-format", "short"}, "%f:%l:%c: %m")
     makeLinter("hlint", "haskell", "hlint", {"%f"}, "%f:%(?%l[,:]%c%)?.-: %m")
     makeLinter("javac", "java", "javac", {"-d", "%d", "%f"}, "%f:%l: error: %m")
     makeLinter("jshint", "javascript", "jshint", {"%f"}, "%f: line %l,.+, %m")
@@ -83,8 +84,9 @@ function preinit()
     makeLinter("pylint", "python", "pylint", {"--output-format=parseable", "--reports=no", "%f"}, "%f:%l: %m")
     makeLinter("flake8", "python", "flake8", {"%f"}, "%f:%l:%c: %m")
     makeLinter("shfmt", "shell", "shfmt", {"%f"}, "%f:%l:%c: %m")
+    makeLinter("shellcheck", "shell", "shellcheck", {"-f", "gcc", "%f"}, "%f:%l:%c:.+: %m")
     makeLinter("swiftc", "swift", "xcrun", {"swiftc", "%f"}, "%f:%l:%c:.+: %m", {"darwin"}, true)
-    makeLinter("swiftc", "swift", "swiftc", {"%f"}, "%f:%l:%c:.+: %m", {"linux"}, true)
+    makeLinter("swiftc-linux", "swift", "swiftc", {"%f"}, "%f:%l:%c:.+: %m", {"linux"}, true)
     makeLinter("yaml", "yaml", "yamllint", {"--format", "parsable", "%f"}, "%f:%l:%c:.+ %m")
     makeLinter("nix-linter", "nix", "nix-linter", {"%f"}, "%m at %f:%l:%c", {"linux"}, true)
 
@@ -168,7 +170,7 @@ function onExit(output, args)
             elseif col == nil then
                 hascol = false
             end
-            if basename(buf.Path) == basename(file) then
+            if abspath(buf.Path) == abspath(file) then
                 local bmsg = nil
                 if hascol then
                     local mstart = buffer.Loc(tonumber(col-1+coff), tonumber(line-1+loff))
@@ -178,6 +180,9 @@ function onExit(output, args)
                     bmsg = buffer.NewMessageAtLine(linter, msg, tonumber(line+loff), buffer.MTError)
                 end
                 buf:AddMessage(bmsg)
+            else
+                local msg_text = file .. ":" .. tonumber(line+loff) .. ": " .. msg
+                buf:AddMessage(buffer.NewMessageAtLine(linter, msg_text, -1, buffer.MTError))
             end
         end
     end
@@ -192,11 +197,7 @@ function split(str, sep)
     return result
 end
 
-function basename(file)
-    local sep = "/"
-    if runtime.GOOS == "windows" then
-        sep = "\\"
-    end
-    local name = string.gsub(file, "(.*" .. sep .. ")(.*)", "%2")
-    return name
+function abspath(file)
+    if filepath.IsAbs(file) then return file end
+    return filepath.Abs(file)
 end

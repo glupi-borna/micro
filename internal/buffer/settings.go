@@ -45,6 +45,12 @@ func (b *Buffer) SetOptionNative(option string, nativeValue interface{}) error {
 		} else if b.HasLSP() {
 			b.Server.Shutdown()
 		}
+	} else if option == "hlsearch" {
+		for _, buf := range OpenBuffers {
+			if b.SharedBuffer == buf.SharedBuffer {
+				buf.HighlightSearch = nativeValue.(bool)
+			}
+		}
 	}
 
 	if b.OptionCallback != nil {

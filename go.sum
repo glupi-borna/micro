@@ -146,8 +146,6 @@ github.com/zyedidia/go-runewidth v0.0.12 h1:aHWj8qL3aH7caRzoPBJXe1pEaZBXHpKtfTui
 github.com/zyedidia/go-runewidth v0.0.12/go.mod h1:vF8djYdLmG8BJaUZ4CznFYCJ3pFR8m4B4VinTvTTarU=
 github.com/zyedidia/go-shellquote v0.0.0-20200613203517-eccd813c0655 h1:Z3RhH6hvcSx7eX6Q/pP6YVsgea/1eMDG99vtWwi3nK4=
 github.com/zyedidia/go-shellquote v0.0.0-20200613203517-eccd813c0655/go.mod h1:1sTqqO+kcYzZp43M5VsJe1tns9IzlSeC9jB6c2+o/5Y=
-github.com/zyedidia/highlight v0.0.0-20170330143449-201131ce5cf5 h1:Zs6mpwXvlqpF9zHl5XaN0p5V4J9XvP+WBuiuXyIgqvc=
-github.com/zyedidia/highlight v0.0.0-20170330143449-201131ce5cf5/go.mod h1:c1r+Ob9tUTPB0FKWO1+x+Hsc/zNa45WdGq7Y38Ybip0=
 github.com/zyedidia/json5 v0.0.0-20200102012142-2da050b1a98d h1:zmDMkh22zXOB7gz8jFaI4GpI7llsPgzm38/jG0UgxjE=
 github.com/zyedidia/json5 v0.0.0-20200102012142-2da050b1a98d/go.mod h1:NDJSTTYWivnza6zkRapeX2/LwhKPEMQ7bJxqgDVT78I=
 github.com/zyedidia/poller v1.0.1 h1:Tt9S3AxAjXwWGNiC2TUdRJkQDZSzCBNVQ4xXiQ7440s=

@@ -32,6 +32,16 @@ func GetServer(l Language, dir string) *Server {
 	return nil
 }
 
+func GetActiveServerNames() []string {
+	var servers []string
+
+	for server := range activeServers {
+		servers = append(servers, server)
+	}
+
+	return servers
+}
+
 func ShutdownAllServers() {
 	for _, s := range activeServers {
 		if s.Active {
@@ -179,6 +189,14 @@ func (s *Server) Initialize(directory string) {
 
 		s.capabilities = r.Result.Capabilities
 	}()
+}
+
+func (s *Server) GetLanguage() *Language {
+	return s.language
+}
+
+func (s *Server) GetCommand() *exec.Cmd {
+	return s.cmd
 }
 
 func (s *Server) Shutdown() {

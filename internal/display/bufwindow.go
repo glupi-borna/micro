@@ -11,8 +11,7 @@ import (
 	"github.com/zyedidia/tcell/v2"
 )
 
-// The BufWindow provides a way of displaying a certain section
-// of a buffer
+// The BufWindow provides a way of displaying a certain section of a buffer.
 type BufWindow struct {
 	*View
 
@@ -45,6 +44,7 @@ func NewBufWindow(x, y, width, height int, buf *buffer.Buffer) *BufWindow {
 	return w
 }
 
+// SetBuffer sets this window's buffer.
 func (w *BufWindow) SetBuffer(b *buffer.Buffer) {
 	w.Buf = b
 	b.OptionCallback = func(option string, nativeValue interface{}) {
@@ -66,14 +66,17 @@ func (w *BufWindow) SetBuffer(b *buffer.Buffer) {
 	}
 }
 
+// GetView gets the view.
 func (w *BufWindow) GetView() *View {
 	return w.View
 }
 
+// GetView sets the view.
 func (w *BufWindow) SetView(view *View) {
 	w.View = view
 }
 
+// Resize resizes this window.
 func (w *BufWindow) Resize(width, height int) {
 	w.Width, w.Height = width, height
 	w.updateDisplayInfo()
@@ -87,10 +90,12 @@ func (w *BufWindow) Resize(width, height int) {
 	}
 }
 
+// SetActive marks the window as active.
 func (w *BufWindow) SetActive(b bool) {
 	w.active = b
 }
 
+// IsActive returns true if this window is active.
 func (w *BufWindow) IsActive() bool {
 	return w.active
 }
@@ -268,6 +273,38 @@ func (w *BufWindow) hasMessageAt(vloc *buffer.Loc, bloc *buffer.Loc) (bool, tcel
 	return false, config.DefStyle
 }
 
+func (w *BufWindow) hasNonMarkMessageAt(vloc *buffer.Loc, bloc *buffer.Loc) (bool, tcell.Style) {
+	if w.hasMessage {
+		for _, m := range w.Buf.Messages {
+			if m.Start.Y == bloc.Y || m.End.Y == bloc.Y {
+				return true, m.Style()
+			}
+		}
+	}
+
+	return false, config.DefStyle
+}
+
+func (w *BufWindow) drawMarkGutter(vloc *buffer.Loc, bloc *buffer.Loc, style tcell.Style) {
+	char := ' '
+
+	for _, m := range w.Buf.Messages {
+		if m.Kind == buffer.MTMark {
+			if m.Start.Y == bloc.Y || m.End.Y == bloc.Y {
+				gutterMarkStr := w.Buf.Settings["guttermark"].(string)
+				if len(gutterMarkStr) == 0 {
+					char = '*'
+				} else {
+					char = []rune(gutterMarkStr)[0]
+				}
+				break
+			}
+		}
+	}
+
+	screen.SetContent(w.X+vloc.X, w.Y+vloc.Y, char, nil, style)
+}
+
 func (w *BufWindow) drawDiffGutter(backgroundStyle tcell.Style, softwrapped bool, vloc *buffer.Loc, bloc *buffer.Loc) {
 	symbol := ' '
 	styleName := ""
@@ -296,7 +333,7 @@ func (w *BufWindow) drawDiffGutter(backgroundStyle tcell.Style, softwrapped bool
 	vloc.X++
 }
 
-func (w *BufWindow) drawLineNum(lineNumStyle tcell.Style, softwrapped bool, vloc *buffer.Loc, bloc *buffer.Loc) {
+func (w *BufWindow) drawLineNum(lineNumStyle tcell.Style, markStyle tcell.Style, softwrapped bool, vloc *buffer.Loc, bloc *buffer.Loc) {
 	cursorLine := w.Buf.GetActiveCursor().Loc.Y
 	var lineInt int
 	if w.Buf.Settings["relativeruler"] == false || cursorLine == bloc.Y {
@@ -321,8 +358,12 @@ func (w *BufWindow) drawLineNum(lineNumStyle tcell.Style, softwrapped bool, vloc
 		vloc.X++
 	}
 
-	// Write the extra space
-	screen.SetContent(w.X+vloc.X, w.Y+vloc.Y, ' ', nil, lineNumStyle)
+	// Write the mark gutter
+	if softwrapped {
+		screen.SetContent(w.X+vloc.X, w.Y+vloc.Y, ' ', nil, lineNumStyle)
+	} else {
+		w.drawMarkGutter(vloc, bloc, markStyle)
+	}
 	vloc.X++
 }
 
@@ -414,9 +455,28 @@ func (w *BufWindow) displayBuffer() {
 			curNumStyle = style
 		}
 	}
+	markStyle := lineNumStyle
+	if style, ok := config.Colorscheme["gutter-mark"]; ok {
+		markStyle = style
+	}
 
 	softwrap := b.Settings["softwrap"].(bool)
 	wordwrap := softwrap && b.Settings["wordwrap"].(bool)
+
+	indentrunes := []rune(b.Settings["indentchar"].(string))
+	spacerune := rune(' ')
+	if len(indentrunes) > 0 { spacerune = indentrunes[0] }
+
+	tabrune := rune('|')
+	if len(indentrunes) > 1 { tabrune = indentrunes[1] }
+
+	nlrune := rune(' ')
+	if len(indentrunes) > 2 { nlrune = indentrunes[2] }
+
+	tabstospaces := b.Settings["tabstospaces"].(bool)
+	diffgutter := b.Settings["diffgutter"].(bool)
+	ruler := b.Settings["ruler"].(bool)
+	cursorline := b.Settings["cursorline"].(bool)
 
 	tabsize := util.IntOpt(b.Settings["tabsize"])
 	colorcolumn := util.IntOpt(b.Settings["colorcolumn"])
@@ -437,6 +497,7 @@ func (w *BufWindow) displayBuffer() {
 	curStyle := config.DefStyle
 	for ; vloc.Y < w.bufHeight; vloc.Y++ {
 		vloc.X = 0
+		whiteSpace := true
 
 		currentLine := false
 		for _, c := range cursors {
@@ -452,17 +513,17 @@ func (w *BufWindow) displayBuffer() {
 		}
 
 		if vloc.Y >= 0 {
-			if b.Settings["diffgutter"].(bool) {
+			if diffgutter {
 				w.drawDiffGutter(s, false, &vloc, &bloc)
 			}
 
-			if b.Settings["ruler"].(bool) {
-				hasMsg, msgStyle := w.hasMessageAt(&vloc, &bloc)
+			if ruler {
+				hasMsg, msgStyle := w.hasNonMarkMessageAt(&vloc, &bloc)
 				if hasMsg {
 					s = msgStyle
 				}
 
-				w.drawLineNum(s, false, &vloc, &bloc)
+				w.drawLineNum(s, markStyle, false, &vloc, &bloc)
 			}
 		} else {
 			vloc.X = w.gutterOffset
@@ -474,13 +535,20 @@ func (w *BufWindow) displayBuffer() {
 		}
 		bloc.X = bslice
 
-		draw := func(r rune, combc []rune, style tcell.Style, highlight bool, showcursor bool, tabstart bool) {
+		draw := func(r rune, combc []rune, style tcell.Style, highlight bool, showcursor bool, tabstart bool, first bool) {
 			if nColsBeforeStart <= 0 && vloc.Y >= 0 {
 				if highlight {
+					if w.Buf.HighlightSearch && w.Buf.SearchMatch(bloc) {
+						style = config.DefStyle.Reverse(true)
+						if s, ok := config.Colorscheme["hlsearch"]; ok {
+							style = s
+						}
+					}
+
 					_, origBg, _ := style.Decompose()
 					_, defBg, _ := config.DefStyle.Decompose()
 
-					// syntax highlighting with non-default background takes precedence
+					// syntax or hlsearch highlighting with non-default background takes precedence
 					// over cursor-line and color-column
 					dontOverrideBackground := origBg != defBg
 
@@ -496,7 +564,7 @@ func (w *BufWindow) displayBuffer() {
 							}
 						}
 
-						if b.Settings["cursorline"].(bool) && w.active && !dontOverrideBackground &&
+						if cursorline && w.active && !dontOverrideBackground &&
 							!c.HasSelection() && c.Y == bloc.Y {
 							if s, ok := config.Colorscheme["cursor-line"]; ok {
 								fg, _, _ := s.Decompose()
@@ -513,15 +581,38 @@ func (w *BufWindow) displayBuffer() {
 						}
 					}
 
-					if (tabstart && r == ' ') || r == '\t' {
-						indentrunes := []rune(b.Settings["indentchar"].(string))
-						// if empty indentchar settings, use space
-						if len(indentrunes) == 0 {
-							indentrunes = []rune{' '}
+					if r == ' ' || r == '\t' {
+						if r == ' ' {
+							if !tabstospaces {
+								r = spacerune
+							} else {
+								if (whiteSpace && tabstart) {
+									r = spacerune
+								} else {
+									r = ' '
+								}
+							}
+						} else {
+							if tabstart || first {
+								r = tabrune
+							} else {
+								r = ' '
+							}
 						}
 
-						r = indentrunes[0]
-						if s, ok := config.Colorscheme["indent-char"]; ok && r != ' ' {
+						cs_name := "indent-char"
+						if !whiteSpace { cs_name = "whitespace-char" }
+
+						if s, ok := config.Colorscheme[cs_name]; ok {
+							fg, _, _ := s.Decompose()
+							style = style.Foreground(fg)
+						}
+					}
+
+					if (r == '\n') {
+						r = nlrune
+
+						if s, ok := config.Colorscheme["indent-char"]; ok {
 							fg, _, _ := s.Decompose()
 							style = style.Foreground(fg)
 						}
@@ -566,17 +657,17 @@ func (w *BufWindow) displayBuffer() {
 
 		wrap := func() {
 			vloc.X = 0
-			if b.Settings["diffgutter"].(bool) {
+			if diffgutter {
 				w.drawDiffGutter(lineNumStyle, true, &vloc, &bloc)
 			}
 
 			// This will draw an empty line number because the current line is wrapped
-			if b.Settings["ruler"].(bool) {
+			if ruler {
 				hasMsg, msgStyle := w.hasMessageAt(&vloc, &bloc)
 				if hasMsg {
-					w.drawLineNum(msgStyle, true, &vloc, &bloc)
+					w.drawLineNum(msgStyle, markStyle, true, &vloc, &bloc)
 				} else {
-					w.drawLineNum(lineNumStyle, true, &vloc, &bloc)
+					w.drawLineNum(lineNumStyle, markStyle, true, &vloc, &bloc)
 				}
 			}
 		}
@@ -597,7 +688,6 @@ func (w *BufWindow) displayBuffer() {
 		wordwidth := 0
 
 		totalwidth := w.StartCol - nColsBeforeStart
-		whiteSpace := true
 
 		for len(line) > 0 {
 			r, combc, size := util.DecodeCharacter(line)
@@ -640,7 +730,7 @@ func (w *BufWindow) displayBuffer() {
 			if vloc.X+wordwidth > maxWidth && vloc.X > w.gutterOffset {
 				for vloc.X < maxWidth {
 					tabstart = whiteSpace && (vloc.X - w.gutterOffset) % tabsize == 0
-					draw(' ', nil, config.DefStyle, false, false, tabstart)
+					draw(' ', nil, config.DefStyle, false, false, tabstart, false)
 				}
 
 				// We either stop or we wrap to draw the word in the next line
@@ -657,18 +747,18 @@ func (w *BufWindow) displayBuffer() {
 
 			for _, r := range word {
 				tabstart = whiteSpace && (vloc.X - w.gutterOffset) % tabsize == 0
-				draw(r.r, r.combc, r.style, true, true, tabstart)
+				draw(r.r, r.combc, r.style, true, true, tabstart, true)
 
-				// Draw any extra characters either spaces for tabs or @ for incomplete wide runes
+				// Draw any extra characters either tabs or @ for incomplete wide runes
 				if r.width > 1 {
-					char := ' '
+					char := '\t'
 					if r.r != '\t' {
 						char = '@'
 					}
 
 					for i := 1; i < r.width; i++ {
 						tabstart = whiteSpace && (vloc.X - w.gutterOffset) % tabsize == 0
-						draw(char, nil, r.style, true, false, tabstart)
+						draw(char, nil, r.style, true, false, tabstart, false)
 					}
 				}
 				bloc.X++
@@ -693,7 +783,7 @@ func (w *BufWindow) displayBuffer() {
 
 		style := config.DefStyle
 		for _, c := range cursors {
-			if b.Settings["cursorline"].(bool) && w.active &&
+			if cursorline && w.active &&
 				!c.HasSelection() && c.Y == bloc.Y {
 				if s, ok := config.Colorscheme["cursor-line"]; ok {
 					fg, _, _ := s.Decompose()
@@ -714,7 +804,7 @@ func (w *BufWindow) displayBuffer() {
 
 		if vloc.X != maxWidth {
 			// Display newline within a selection
-			draw(' ', nil, config.DefStyle, true, true, false)
+			draw('\n', nil, config.DefStyle, true, true, false, false)
 		}
 
 		bloc.X = w.StartCol
