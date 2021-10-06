@@ -1927,7 +1927,16 @@ func (h *BufPane) SemanticInfo() bool {
 		return false
 	}
 
-	info = strings.Split(info, "\n")[0]
+	splits := strings.Split(info, "\n")
+	var filtered_splits []string
+	for _, str := range splits {
+		str = strings.TrimSpace(str)
+		if str != "" {
+			filtered_splits = append(filtered_splits, str)
+		}
+	}
+
+	info = strings.Join(filtered_splits, " │ ")
 
 	InfoBar.Message(info)
 	return true

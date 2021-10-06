@@ -218,6 +218,51 @@ func BufferComplete(b *Buffer) []Completion {
 	return ConvertCompletions(completions, suggestions, c)
 }
 
+type completionSort struct {
+	completions []Completion
+	target      string
+}
+
+func CompareStrings(s1, s2 string) float32 {
+	max1 := len(s1)
+	max2 := len(s2)
+	max := max1
+	if max2 < max1 {
+		max = max2
+	}
+
+	if max == 0 {
+		return 0
+	}
+
+	str1 := strings.ToLower(s1)
+	str2 := strings.ToLower(s2)
+
+	total := 0
+
+	for i:=0; i<max; i++ {
+		if str1[i] == str2[i] {
+			total += 1
+		}
+	}
+
+	return float32(total) / float32(max1)
+}
+
+func (s completionSort) Len() int {
+	return len(s.completions)
+}
+
+func (s completionSort) Swap(i, j int) {
+	s.completions[i], s.completions[j] = s.completions[j], s.completions[i]
+}
+
+func (s completionSort) Less(i, j int) bool {
+	isimil := CompareStrings(s.target, s.completions[i].Label)
+	jsimil := CompareStrings(s.target, s.completions[j].Label)
+	return isimil > jsimil
+}
+
 func LSPComplete(b *Buffer) []Completion {
 	if !b.HasLSP() {
 		return nil
@@ -231,6 +276,7 @@ func LSPComplete(b *Buffer) []Completion {
 	}
 
 	completions := make([]Completion, len(items))
+	input, argstart := GetWord(b)
 
 	for i, item := range items {
 		completions[i] = Completion{
@@ -261,7 +307,6 @@ func LSPComplete(b *Buffer) []Completion {
 			} else {
 				t = item.Label
 			}
-			_, argstart := GetWord(b)
 			str := util.SliceEnd([]byte(t), c.X-argstart)
 			completions[i].Edits = []Delta{Delta{
 				Text:  str,
@@ -271,7 +316,12 @@ func LSPComplete(b *Buffer) []Completion {
 		}
 	}
 
-	return completions
+	var cs completionSort
+	cs.completions = completions
+	cs.target = string(input)
+	sort.Sort(cs)
+
+	return cs.completions
 }
 
 // ConvertCompletions converts a list of insert text with suggestion labels
