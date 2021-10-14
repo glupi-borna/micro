@@ -1920,6 +1920,10 @@ func (h *BufPane) RemoveAllMultiCursors() bool {
 // displays the information in the infobar
 // The information is fetched using the LSP server (must be enabled)
 func (h *BufPane) SemanticInfo() bool {
+	if !h.Buf.HasLSP() {
+		return false
+	}
+
 	info, err := h.Buf.Server.Hover(h.Buf.AbsPath, lsp.Position(h.Cursor.X, h.Cursor.Y))
 
 	if err != nil {
@@ -1944,6 +1948,10 @@ func (h *BufPane) SemanticInfo() bool {
 
 // AutoFormat automatically formats the document using LSP
 func (h *BufPane) AutoFormat() bool {
+	if !h.Buf.HasLSP() {
+		return false
+	}
+
 	var err error
 	var edits []protocol.TextEdit
 
