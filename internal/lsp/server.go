@@ -12,9 +12,10 @@ import (
 	"strings"
 	"sync"
 	"time"
-
 	lsp "go.lsp.dev/protocol"
 	"go.lsp.dev/uri"
+	"github.com/zyedidia/micro/v2/internal/config"
+	"github.com/zyedidia/tcell/v2"
 )
 
 var activeServers map[string]*Server
@@ -61,6 +62,7 @@ type Server struct {
 	Active       bool
 	requestID    int
 	responses    map[int]chan ([]byte)
+	diagnostics  map[uri.URI] []lsp.Diagnostic
 }
 
 type RPCRequest struct {
@@ -87,6 +89,14 @@ type RPCResult struct {
 	ID         int    `json:"id,omitempty"`
 	Method     string `json:"method,omitempty"`
 }
+
+type RPCDiag struct {
+	RPCVersion string `json:"jsonrpc"`
+	ID     int                          `json:"id,omitempty"`
+	Method string                       `json:"method,omitempty"`
+	Params lsp.PublishDiagnosticsParams `json:"params"`
+}
+
 
 func StartServer(l Language) (*Server, error) {
 	s := new(Server)
@@ -162,6 +172,7 @@ func (s *Server) Initialize(directory string) {
 	activeServers[s.language.Command+"-"+directory] = s
 	s.Active = true
 	s.root = directory
+	s.diagnostics = make(map[uri.URI][]lsp.Diagnostic)
 
 	go s.receive()
 
@@ -222,7 +233,7 @@ func (s *Server) receive() {
 		var r RPCResult
 		err = json.Unmarshal(resp, &r)
 		if err != nil {
-			log.Println("[micro-lsp]", err)
+			log.Println("[micro-lsp,error]", err)
 			continue
 		}
 
@@ -230,7 +241,14 @@ func (s *Server) receive() {
 		case lsp.MethodWindowLogMessage:
 			// TODO
 		case lsp.MethodTextDocumentPublishDiagnostics:
-			// TODO
+			var diag RPCDiag
+			err = json.Unmarshal(resp, &diag)
+			if err != nil {
+				log.Println("[micro-lsp,error]", err)
+				continue
+			}
+			fileuri := uri.URI(string(diag.Params.URI))
+			s.diagnostics[fileuri] = diag.Params.Diagnostics
 		case "":
 			// Response
 			if _, ok := s.responses[r.ID]; ok {
@@ -238,6 +256,45 @@ func (s *Server) receive() {
 				s.responses[r.ID] <- resp
 			}
 		}
+	}
+}
+
+func Style(d *lsp.Diagnostic) tcell.Style {
+	switch d.Severity {
+	case lsp.SeverityInformation:
+	case lsp.SeverityHint:
+		if style, ok := config.Colorscheme["gutter-info"]; ok {
+			return style
+		}
+	case lsp.SeverityWarning:
+		if style, ok := config.Colorscheme["gutter-warning"]; ok {
+			return style
+		}
+	case lsp.SeverityError:
+		if style, ok := config.Colorscheme["gutter-error"]; ok {
+			return style
+		}
+	}
+	return config.DefStyle
+}
+
+func (s *Server) GetDiagnostics(filename string) *[]lsp.Diagnostic {
+	fileuri := uri.File(filename)
+	diags, exists := s.diagnostics[fileuri]
+	if exists {
+		return &diags
+	} else {
+		return nil
+	}
+}
+
+func (s *Server) DiagnosticsCount(filename string) int {
+	fileuri := uri.File(filename)
+	diags, exists := s.diagnostics[fileuri]
+	if exists {
+		return len(diags)
+	} else {
+		return 0
 	}
 }
 

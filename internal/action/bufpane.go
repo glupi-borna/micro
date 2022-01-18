@@ -426,6 +426,18 @@ func (h *BufPane) HandleEvent(event tcell.Event) {
 				break
 			}
 		}
+		if none && h.Buf.HasLSP() {
+			diags := h.Buf.Server.GetDiagnostics(h.Buf.AbsPath)
+			if diags != nil {
+				for _, d := range *diags {
+					if c.Y == int(d.Range.Start.Line) || c.Y == int(d.Range.End.Line) {
+						InfoBar.GutterMessage(d.Message)
+						none = false
+						break
+					}
+				}
+			}
+		}
 		if none && InfoBar.HasGutter {
 			InfoBar.ClearGutter()
 		}
@@ -594,6 +606,18 @@ func (h *BufPane) SetActive(b bool) {
 				InfoBar.GutterMessage(m.Msg)
 				none = false
 				break
+			}
+		}
+		if none && h.Buf.HasLSP() {
+			diags := h.Buf.Server.GetDiagnostics(h.Buf.AbsPath)
+			if diags != nil {
+				for _, d := range *diags {
+					if c.Y == int(d.Range.Start.Line) || c.Y == int(d.Range.End.Line) {
+						InfoBar.GutterMessage(d.Message)
+						none = false
+						break
+					}
+				}
 			}
 		}
 		if none && InfoBar.HasGutter {

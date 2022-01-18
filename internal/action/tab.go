@@ -112,7 +112,7 @@ func (t *TabList) HandleEvent(event tcell.Event) {
 				return
 			}
 			if len(t.List) > 1 {
-				ind := t.LocFromVisual(buffer.Loc{mx, my})
+				ind := t.LocFromVisual(buffer.Loc{X: mx, Y: my})
 				if ind != -1 {
 					t.SetActive(ind)
 					return
@@ -222,7 +222,7 @@ func (t *Tab) HandleEvent(event tcell.Event) {
 			}
 
 			if wasReleased {
-				t.resizing = t.GetMouseSplitNode(buffer.Loc{mx, my})
+				t.resizing = t.GetMouseSplitNode(buffer.Loc{X: mx, Y: my})
 				if t.resizing != nil {
 					return
 				}

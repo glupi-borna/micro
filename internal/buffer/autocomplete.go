@@ -6,6 +6,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"unicode/utf16"
 
 	"github.com/zyedidia/micro/v2/internal/lsp"
 	"github.com/zyedidia/micro/v2/internal/util"
@@ -293,12 +294,12 @@ func LSPComplete(b *Buffer) []Completion {
 				End:   toLoc(item.TextEdit.Range.End),
 			}}
 			// for _, e := range item.AdditionalTextEdits {
-			// 	d := Delta{
-			// 		Text:  []byte(e.NewText),
-			// 		Start: toLoc(e.Range.Start),
-			// 		End:   toLoc(e.Range.End),
-			// 	}
-			// 	completions[i].Edits = append(completions[i].Edits, d)
+				// d := Delta{
+					// Text:  []byte(e.NewText),
+					// Start: toLoc(e.Range.Start),
+					// End:   toLoc(e.Range.End),
+				// }
+				// completions[i].Edits = append(completions[i].Edits, d)
 			// }
 		} else {
 			var t string
@@ -344,7 +345,7 @@ func ConvertCompletions(completions, suggestions []string, c *Cursor) []Completi
 
 func toKindStr(k protocol.CompletionItemKind) string {
 	s := k.String()
-	return strings.ToLower(string(s[0]))
+	return strings.ToLower(s)
 }
 
 // returns documentation from a string | MarkupContent item

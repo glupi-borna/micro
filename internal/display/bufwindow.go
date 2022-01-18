@@ -8,6 +8,7 @@ import (
 	"github.com/zyedidia/micro/v2/internal/config"
 	"github.com/zyedidia/micro/v2/internal/screen"
 	"github.com/zyedidia/micro/v2/internal/util"
+	"github.com/zyedidia/micro/v2/internal/lsp"
 	"github.com/zyedidia/tcell/v2"
 )
 
@@ -261,6 +262,18 @@ func (w *BufWindow) LocFromVisual(svloc buffer.Loc) buffer.Loc {
 	return w.LocFromVLoc(vloc)
 }
 
+func (w *BufWindow) hasDiagnosticAt(vloc *buffer.Loc, bloc *buffer.Loc) (bool, tcell.Style) {
+	diags := w.Buf.Server.GetDiagnostics(w.Buf.AbsPath)
+		if diags != nil {
+		for _, d := range *diags {
+			if int(d.Range.Start.Line) == bloc.Y {
+				return true, lsp.Style(&d)
+			}
+		}
+	}
+	return false, config.DefStyle
+}
+
 func (w *BufWindow) hasMessageAt(vloc *buffer.Loc, bloc *buffer.Loc) (bool, tcell.Style) {
 	if w.hasMessage {
 		for _, m := range w.Buf.Messages {
@@ -273,16 +286,14 @@ func (w *BufWindow) hasMessageAt(vloc *buffer.Loc, bloc *buffer.Loc) (bool, tcel
 	return false, config.DefStyle
 }
 
-func (w *BufWindow) hasNonMarkMessageAt(vloc *buffer.Loc, bloc *buffer.Loc) (bool, tcell.Style) {
-	if w.hasMessage {
-		for _, m := range w.Buf.Messages {
-			if m.Start.Y == bloc.Y || m.End.Y == bloc.Y {
-				return true, m.Style()
-			}
+func (w *BufWindow) hasMessageOrDiagnosticAt(vloc *buffer.Loc, bloc *buffer.Loc) (bool, tcell.Style) {
+	if (w.Buf.HasLSP()) {
+		ok, style := w.hasDiagnosticAt(vloc, bloc)
+		if ok {
+			return true, style
 		}
 	}
-
-	return false, config.DefStyle
+	return w.hasMessageAt(vloc, bloc)
 }
 
 func (w *BufWindow) drawMarkGutter(vloc *buffer.Loc, bloc *buffer.Loc, style tcell.Style) {
@@ -518,7 +529,7 @@ func (w *BufWindow) displayBuffer() {
 			}
 
 			if ruler {
-				hasMsg, msgStyle := w.hasNonMarkMessageAt(&vloc, &bloc)
+				hasMsg, msgStyle := w.hasMessageOrDiagnosticAt(&vloc, &bloc)
 				if hasMsg {
 					s = msgStyle
 				}
@@ -663,7 +674,7 @@ func (w *BufWindow) displayBuffer() {
 
 			// This will draw an empty line number because the current line is wrapped
 			if ruler {
-				hasMsg, msgStyle := w.hasMessageAt(&vloc, &bloc)
+				hasMsg, msgStyle := w.hasMessageOrDiagnosticAt(&vloc, &bloc)
 				if hasMsg {
 					w.drawLineNum(msgStyle, markStyle, true, &vloc, &bloc)
 				} else {
@@ -888,6 +899,13 @@ func (w *BufWindow) displayCompleteBox() {
 	labelw++
 	kindw++
 
+	defstyle := config.DefStyle.Reverse(true)
+	curstyle := config.DefStyle
+	if style, ok:= config.Colorscheme["statusline"]; ok {
+		defstyle = style
+		curstyle = style.Reverse(true)
+	}
+
 	display := func(s string, width, x, y int, cur bool) {
 		for j := 0; j < width; j++ {
 			r := ' '
@@ -897,10 +915,8 @@ func (w *BufWindow) displayCompleteBox() {
 				r, combc, size = util.DecodeCharacterInString(s)
 				s = s[size:]
 			}
-			st := config.DefStyle.Reverse(true)
-			if cur {
-				st = st.Reverse(false)
-			}
+			st := defstyle
+			if cur { st = curstyle }
 			screen.SetContent(w.completeBox.X+x+j, w.completeBox.Y+y, r, combc, st)
 		}
 	}
