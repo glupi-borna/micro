@@ -6,7 +6,6 @@ import (
 	"os"
 	"sort"
 	"strings"
-	"unicode/utf16"
 
 	"github.com/zyedidia/micro/v2/internal/lsp"
 	"github.com/zyedidia/micro/v2/internal/util"
