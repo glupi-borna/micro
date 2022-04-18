@@ -56,9 +56,9 @@ func (s *Server) DidClose(filename string) {
 	}
 
 	fileuri := uri.File(filename)
-	_, exists := s.diagnostics[fileuri]
+	_, exists := s.diagnostics.Load(fileuri)
 	if exists {
-		delete(s.diagnostics, fileuri)
+		s.diagnostics.Delete(fileuri)
 	}
 
 	go s.sendNotification(lsp.MethodTextDocumentDidClose, params)

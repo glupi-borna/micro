@@ -516,6 +516,7 @@ func importErrors() *lua.LTable {
 	pkg := L.NewTable()
 
 	L.SetField(pkg, "New", luar.New(L, errors.New))
+	L.SetField(pkg, "Is", luar.New(L, errors.Is))
 
 	return pkg
 }

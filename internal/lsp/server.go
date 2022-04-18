@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"fmt"
 	lsp "go.lsp.dev/protocol"
 	"go.lsp.dev/uri"
 	"github.com/zyedidia/micro/v2/internal/config"
@@ -62,7 +63,7 @@ type Server struct {
 	Active       bool
 	requestID    int
 	responses    map[int]chan ([]byte)
-	diagnostics  map[uri.URI] []lsp.Diagnostic
+	diagnostics  sync.Map
 }
 
 type RPCRequest struct {
@@ -172,7 +173,6 @@ func (s *Server) Initialize(directory string) {
 	activeServers[s.language.Command+"-"+directory] = s
 	s.Active = true
 	s.root = directory
-	s.diagnostics = make(map[uri.URI][]lsp.Diagnostic)
 
 	go s.receive()
 
@@ -248,7 +248,7 @@ func (s *Server) receive() {
 				continue
 			}
 			fileuri := uri.URI(string(diag.Params.URI))
-			s.diagnostics[fileuri] = diag.Params.Diagnostics
+			s.diagnostics.Store(fileuri, diag.Params.Diagnostics)
 		case "":
 			// Response
 			if _, ok := s.responses[r.ID]; ok {
@@ -278,11 +278,11 @@ func Style(d *lsp.Diagnostic) tcell.Style {
 	return config.DefStyle
 }
 
-func (s *Server) GetDiagnostics(filename string) *[]lsp.Diagnostic {
+func (s *Server) GetDiagnostics(filename string) []lsp.Diagnostic {
 	fileuri := uri.File(filename)
-	diags, exists := s.diagnostics[fileuri]
+	diags, exists := s.diagnostics.Load(fileuri)
 	if exists {
-		return &diags
+		return diags.([]lsp.Diagnostic)
 	} else {
 		return nil
 	}
@@ -290,15 +290,22 @@ func (s *Server) GetDiagnostics(filename string) *[]lsp.Diagnostic {
 
 func (s *Server) DiagnosticsCount(filename string) int {
 	fileuri := uri.File(filename)
-	diags, exists := s.diagnostics[fileuri]
+	diags, exists := s.diagnostics.Load(fileuri)
 	if exists {
-		return len(diags)
+		return len(diags.([]lsp.Diagnostic))
 	} else {
 		return 0
 	}
 }
 
-func (s *Server) receiveMessage() ([]byte, error) {
+func (s *Server) receiveMessage() (outbyte []byte, err error) {
+	defer func() {
+		if r:= recover(); r != nil {
+			err = fmt.Errorf("pkg: %v", r)
+			outbyte = nil
+		}
+	}()
+
 	n := -1
 	for {
 		b, err := s.stdout.ReadBytes('\n')
@@ -325,12 +332,12 @@ func (s *Server) receiveMessage() ([]byte, error) {
 		return []byte{}, nil
 	}
 
-	bytes := make([]byte, n)
-	_, err := io.ReadFull(s.stdout, bytes)
+	outbyte = make([]byte, n)
+	_, err = io.ReadFull(s.stdout, outbyte)
 	if err != nil {
 		log.Println("[micro-lsp]", err)
 	}
-	return bytes, err
+	return outbyte, err
 }
 
 func (s *Server) sendNotification(method string, params interface{}) error {

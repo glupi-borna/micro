@@ -429,7 +429,7 @@ func (h *BufPane) HandleEvent(event tcell.Event) {
 		if none && h.Buf.HasLSP() {
 			diags := h.Buf.Server.GetDiagnostics(h.Buf.AbsPath)
 			if diags != nil {
-				for _, d := range *diags {
+				for _, d := range diags {
 					if c.Y == int(d.Range.Start.Line) || c.Y == int(d.Range.End.Line) {
 						InfoBar.GutterMessage(d.Message)
 						none = false
@@ -611,7 +611,7 @@ func (h *BufPane) SetActive(b bool) {
 		if none && h.Buf.HasLSP() {
 			diags := h.Buf.Server.GetDiagnostics(h.Buf.AbsPath)
 			if diags != nil {
-				for _, d := range *diags {
+				for _, d := range diags {
 					if c.Y == int(d.Range.Start.Line) || c.Y == int(d.Range.End.Line) {
 						InfoBar.GutterMessage(d.Message)
 						none = false

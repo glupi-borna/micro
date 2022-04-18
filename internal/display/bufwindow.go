@@ -264,8 +264,8 @@ func (w *BufWindow) LocFromVisual(svloc buffer.Loc) buffer.Loc {
 
 func (w *BufWindow) hasDiagnosticAt(vloc *buffer.Loc, bloc *buffer.Loc) (bool, tcell.Style) {
 	diags := w.Buf.Server.GetDiagnostics(w.Buf.AbsPath)
-		if diags != nil {
-		for _, d := range *diags {
+	if diags != nil {
+		for _, d := range diags {
 			if int(d.Range.Start.Line) == bloc.Y {
 				return true, lsp.Style(&d)
 			}
