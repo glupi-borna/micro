@@ -2,6 +2,7 @@ package display
 
 import (
 	"strconv"
+	"strings"
 
 	runewidth "github.com/mattn/go-runewidth"
 	"github.com/zyedidia/micro/v2/internal/buffer"
@@ -937,6 +938,64 @@ func (w *BufWindow) displayCompleteBox() {
 	}
 }
 
+func splitWidth(text string, width int) []string {
+	var out []string
+	textlen := len(text)
+	for ind:=0; ind < textlen; ind+=width {
+		end := util.Min(ind+width, textlen-1)
+		out = append(out, text[ind:end])
+	}
+	return out
+}
+
+func WrapString(text string, width int) []string {
+	ws := util.GetLeadingWhitespace([]byte(text))
+	indent := len(ws)
+	words := strings.Fields(text)
+
+	var out []string
+	curlen := indent
+	curstr := ""
+
+	wordcount := len(words)
+	ind := 0
+	word := words[ind]
+	for {
+		if ind == wordcount { break }
+		wordlen := len(word)
+
+		if curlen+wordlen < width {
+			curstr = curstr + word + " "
+			curlen += wordlen+1
+			ind++
+			if ind == wordcount { break }
+			word = words[ind]
+		} else {
+			if curlen > indent {
+				out = append(out, curstr)
+				curstr = ""
+				curlen = indent
+			} else {
+				bits := splitWidth(word, width-indent)
+				for _, w := range bits {
+					out = append(out, string(ws) + w)
+				}
+				curstr = ""
+				curlen = indent
+				ind++
+				if ind == wordcount { break }
+				word = words[ind]
+			}
+		}
+	}
+
+	if curstr != "" {
+		out = append(out, string(curstr))
+	}
+
+	return out
+}
+
 func (w *BufWindow) displayTooltip() {
 	if !w.Buf.HasTooltip || w.Buf.NumCursors() > 1 {
 		return
@@ -949,7 +1008,9 @@ func (w *BufWindow) displayTooltip() {
 			width = charcount
 		}
 	}
-	width+=2
+	width+=4
+
+	width = util.Min(width, w.bufWidth - w.Buf.GetActiveCursor().X - 1)
 
 	defstyle := config.DefStyle
 	if style, ok:= config.Colorscheme["tooltip"]; ok {
@@ -970,8 +1031,13 @@ func (w *BufWindow) displayTooltip() {
 		}
 	}
 
-	for i, line := range w.Buf.TooltipLines {
-		display(" "+line+" ", width, 0, i+1)
+	ind := 1
+	for _, line := range w.Buf.TooltipLines {
+		wrapped_strings := WrapString(line, width-2)
+		for _, wrapped := range wrapped_strings {
+			display(" "+wrapped+" ", width, 0, ind)
+			ind++
+		}
 	}
 }
 
