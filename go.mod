@@ -20,12 +20,14 @@ require (
 	go.lsp.dev/protocol v0.8.0
 	go.lsp.dev/uri v0.3.0
 	golang.org/x/text v0.3.2
-	gopkg.in/yaml.v2 v2.2.7
+	gopkg.in/yaml.v2 v2.2.8
 	layeh.com/gopher-luar v1.0.7
 )
 
 replace github.com/kballard/go-shellquote => github.com/zyedidia/go-shellquote v0.0.0-20200613203517-eccd813c0655
 
 replace github.com/mattn/go-runewidth => github.com/zyedidia/go-runewidth v0.0.12
+
+replace layeh.com/gopher-luar => github.com/layeh/gopher-luar v1.0.7
 
 go 1.16
