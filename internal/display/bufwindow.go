@@ -19,6 +19,7 @@ type BufWindow struct {
 	// Buffer being shown in this window
 	Buf         *buffer.Buffer
 	completeBox buffer.Loc
+	tooltipBox buffer.Loc
 
 	active bool
 
@@ -503,6 +504,7 @@ func (w *BufWindow) displayBuffer() {
 	// this represents the current draw position in the buffer (char positions)
 	bloc := buffer.Loc{X: -1, Y: w.StartLine.Line}
 
+	cursorPos := b.GetActiveCursor().Loc
 	cursors := b.GetCursors()
 
 	curStyle := config.DefStyle
@@ -649,6 +651,12 @@ func (w *BufWindow) displayBuffer() {
 					compl := w.Buf.Completions[0].Edits[0].Start
 					if bloc.X == compl.X && bloc.Y == compl.Y {
 						w.completeBox = buffer.Loc{w.X + vloc.X, w.Y + vloc.Y}
+					}
+				}
+
+				if w.Buf.HasTooltip && len(w.Buf.TooltipLines) > 0 {
+					if bloc.X == cursorPos.X && bloc.Y == cursorPos.Y {
+						w.tooltipBox = buffer.Loc{w.X + vloc.X, w.Y + vloc.Y}
 					}
 				}
 
@@ -929,6 +937,45 @@ func (w *BufWindow) displayCompleteBox() {
 	}
 }
 
+func (w *BufWindow) displayTooltip() {
+	if !w.Buf.HasTooltip || w.Buf.NumCursors() > 1 {
+		return
+	}
+
+	width := 0
+	for _, line := range w.Buf.TooltipLines {
+		charcount := util.CharacterCountInString(line)
+		if charcount > width {
+			width = charcount
+		}
+	}
+	width+=2
+
+	defstyle := config.DefStyle
+	if style, ok:= config.Colorscheme["tooltip"]; ok {
+		defstyle = style
+	}
+
+	display := func(s string, width, x, y int) {
+		for j := 0; j < width; j++ {
+			r := ' '
+			var combc []rune
+			var size int
+			if len(s) > 0 {
+				r, combc, size = util.DecodeCharacterInString(s)
+				s = s[size:]
+			}
+			st := defstyle
+			screen.SetContent(w.tooltipBox.X+x+j, w.tooltipBox.Y+y, r, combc, st)
+		}
+	}
+
+	for i, line := range w.Buf.TooltipLines {
+		display(" "+line+" ", width, 0, i+1)
+	}
+}
+
+
 // Display displays the buffer and the statusline
 func (w *BufWindow) Display() {
 	w.updateDisplayInfo()
@@ -937,4 +984,5 @@ func (w *BufWindow) Display() {
 	w.displayScrollBar()
 	w.displayBuffer()
 	w.displayCompleteBox()
+	w.displayTooltip()
 }

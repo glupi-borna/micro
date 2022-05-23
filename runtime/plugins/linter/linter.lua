@@ -99,7 +99,7 @@ function preinit()
 end
 
 function contains(list, element)
-    for k, v in pairs(list) do
+    for _, v in pairs(list) do
         if v == element then
             return true
         end
@@ -128,8 +128,8 @@ function runLinter(buf)
 
         if ftmatch then
             local args = {}
-            for k, arg in pairs(v.args) do
-                args[k] = arg:gsub("%%f", file):gsub("%%d", dir)
+            for j, arg in pairs(v.args) do
+                args[j] = arg:gsub("%%f", file):gsub("%%d", dir)
             end
             lint(buf, k, v.cmd, args, v.errorformat, v.loffset, v.coffset, v.callback)
         end
@@ -162,7 +162,7 @@ function onExit(output, args)
         -- Trim whitespace
         line = line:match("^%s*(.+)%s*$")
         if string.find(line, regex) then
-            local file, line, col, msg = string.match(line, regex)
+            local file, mline, col, msg = string.match(line, regex)
             local hascol = true
             if not string.find(errorformat, "%%c") then
                 hascol = false
@@ -171,17 +171,17 @@ function onExit(output, args)
                 hascol = false
             end
             if abspath(buf.Path) == abspath(file) then
-                local bmsg = nil
+                local bmsg
                 if hascol then
-                    local mstart = buffer.Loc(tonumber(col-1+coff), tonumber(line-1+loff))
-                    local mend = buffer.Loc(tonumber(col+coff), tonumber(line-1+loff))
+                    local mstart = buffer.Loc(tonumber(col-1+coff), tonumber(mline-1+loff))
+                    local mend = buffer.Loc(tonumber(col+coff), tonumber(mline-1+loff))
                     bmsg = buffer.NewMessage(linter, msg, mstart, mend, buffer.MTError)
                 else
-                    bmsg = buffer.NewMessageAtLine(linter, msg, tonumber(line+loff), buffer.MTError)
+                    bmsg = buffer.NewMessageAtLine(linter, msg, tonumber(mline+loff), buffer.MTError)
                 end
                 buf:AddMessage(bmsg)
             else
-                local msg_text = file .. ":" .. tonumber(line+loff) .. ": " .. msg
+                local msg_text = file .. ":" .. tonumber(mline+loff) .. ": " .. msg
                 buf:AddMessage(buffer.NewMessageAtLine(linter, msg_text, -1, buffer.MTError))
             end
         end

@@ -75,6 +75,7 @@ func (b *Buffer) CycleAutocomplete(forward bool) {
 	b.ApplyDeltas(comp.Edits)
 	if len(b.Completions) > 1 {
 		b.HasSuggestions = true
+		b.HasTooltip = false
 	}
 }
 
@@ -292,14 +293,14 @@ func LSPComplete(b *Buffer) []Completion {
 				Start: toLoc(item.TextEdit.Range.Start),
 				End:   toLoc(item.TextEdit.Range.End),
 			}}
-			// for _, e := range item.AdditionalTextEdits {
-				// d := Delta{
-					// Text:  []byte(e.NewText),
-					// Start: toLoc(e.Range.Start),
-					// End:   toLoc(e.Range.End),
-				// }
-				// completions[i].Edits = append(completions[i].Edits, d)
-			// }
+			for _, e := range item.AdditionalTextEdits {
+				d := Delta{
+					Text:  []byte(e.NewText),
+					Start: toLoc(e.Range.Start),
+					End:   toLoc(e.Range.End),
+				}
+				completions[i].Edits = append(completions[i].Edits, d)
+			}
 		} else {
 			var t string
 			if len(item.InsertText) > 0 {

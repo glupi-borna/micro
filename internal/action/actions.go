@@ -67,6 +67,9 @@ func (h *BufPane) MousePress(e *tcell.EventMouse) bool {
 	mouseLoc := h.LocFromVisual(buffer.Loc{mx, my})
 	h.Cursor.Loc = mouseLoc
 	if h.mouseReleased {
+		b.HasSuggestions = false
+		b.HasTooltip = false
+
 		if isInGutter {
 			markExists := false
 			removeMessages := []int{}
@@ -1916,33 +1919,23 @@ func (h *BufPane) RemoveAllMultiCursors() bool {
 	return true
 }
 
-// SemanticInfo returns information about the identifier the cursor is on and
-// displays the information in the infobar
-// The information is fetched using the LSP server (must be enabled)
-func (h *BufPane) SemanticInfo() bool {
-	if !h.Buf.HasLSP() {
-		return false
-	}
-
-	info, err := h.Buf.Server.Hover(h.Buf.AbsPath, lsp.Position(h.Cursor.X, h.Cursor.Y))
-
+func (h *BufPane) Tooltip() bool {
+	tip, err := h.Buf.LSPHover()
 	if err != nil {
 		InfoBar.Error(err)
 		return false
 	}
 
-	splits := strings.Split(info, "\n")
-	var filtered_splits []string
-	for _, str := range splits {
-		str = strings.TrimSpace(str)
-		if str != "" {
-			filtered_splits = append(filtered_splits, str)
-		}
+	if len(tip) > 0 {
+		h.Buf.TooltipLines = tip
+		h.Buf.HasTooltip = true
+		h.Buf.HasSuggestions = false
+	} else {
+		h.Buf.TooltipLines = nil
+		h.Buf.HasTooltip = false
+		h.Buf.HasSuggestions = false
 	}
 
-	info = strings.Join(filtered_splits, " │ ")
-
-	InfoBar.Message(info)
 	return true
 }
 

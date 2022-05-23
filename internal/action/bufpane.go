@@ -472,6 +472,10 @@ func (h *BufPane) execAction(action func(*BufPane) bool, name string, cursor int
 		h.Buf.HasSuggestions = false
 	}
 
+	if name != "Tooltip" {
+		h.Buf.HasTooltip = false
+	}
+
 	_, isMulti := MultiActions[name]
 	if (!isMulti && cursor == 0) || isMulti {
 		if h.PluginCB("pre" + name) {
@@ -738,7 +742,8 @@ var BufKeyActions = map[string]BufKeyAction{
 	"JumpLine":                  (*BufPane).JumpLine,
 	"Deselect":                  (*BufPane).Deselect,
 	"ClearInfo":                 (*BufPane).ClearInfo,
-	"SemanticInfo":              (*BufPane).SemanticInfo,
+	"SemanticInfo":              (*BufPane).Tooltip,
+	"Tooltip":                   (*BufPane).Tooltip,
 	"AutoFormat":                (*BufPane).AutoFormat,
 	"None":                      (*BufPane).None,
 

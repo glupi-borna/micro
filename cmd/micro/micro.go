@@ -405,7 +405,6 @@ func DoEvent() {
 	action.MainTab().Display()
 	action.InfoBar.Display()
 	screen.Screen.Show()
-	action.InfoBar.Message("")
 
 	// Check for new events
 	select {

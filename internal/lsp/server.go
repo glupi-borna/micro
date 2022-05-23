@@ -17,6 +17,7 @@ import (
 	"go.lsp.dev/uri"
 	"github.com/zyedidia/micro/v2/internal/config"
 	"github.com/zyedidia/tcell/v2"
+	"github.com/zyedidia/micro/v2/internal/screen"
 )
 
 var activeServers map[string]*Server
@@ -303,6 +304,8 @@ func (s *Server) receiveMessage() (outbyte []byte, err error) {
 		if r:= recover(); r != nil {
 			err = fmt.Errorf("pkg: %v", r)
 			outbyte = nil
+		} else {
+			go screen.Redraw();
 		}
 	}()
 

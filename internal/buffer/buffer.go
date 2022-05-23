@@ -115,6 +115,8 @@ type SharedBuffer struct {
 	// Whether or not suggestions can be autocompleted must be shared because
 	// it changes based on how the buffer has changed
 	HasSuggestions bool
+	HasTooltip bool
+	TooltipLines []string
 
 	// The Highlighter struct actually performs the highlighting
 	Highlighter *highlight.Highlighter
@@ -134,6 +136,7 @@ type SharedBuffer struct {
 func (b *SharedBuffer) insert(pos Loc, value []byte) {
 	b.isModified = true
 	b.HasSuggestions = false
+	b.HasTooltip = false
 	b.LineArray.insert(pos, value)
 
 	inslines := bytes.Count(value, []byte{'\n'})
@@ -144,6 +147,7 @@ func (b *SharedBuffer) insert(pos Loc, value []byte) {
 func (b *SharedBuffer) remove(start, end Loc) []byte {
 	b.isModified = true
 	b.HasSuggestions = false
+	b.HasTooltip = false
 	defer b.MarkModified(start.Y, end.Y)
 	sub := b.LineArray.remove(start, end)
 	b.lspDidChange(start, end, "")
@@ -151,17 +155,17 @@ func (b *SharedBuffer) remove(start, end Loc) []byte {
 }
 
 func (b *SharedBuffer) lspDidChange(start, end Loc, text string) {
-	b.version++
-	// TODO: convert to UTF16 codepoints
-	change := lspt.TextDocumentContentChangeEvent{
-		Range: &lspt.Range{
-			Start: lsp.Position(start.X, start.Y),
-			End:   lsp.Position(end.X, end.Y),
-		},
-		Text: text,
-	}
-
 	if b.HasLSP() {
+		b.version++
+		// TODO: convert to UTF16 codepoints
+		change := lspt.TextDocumentContentChangeEvent{
+			Range: &lspt.Range{
+				Start: lsp.Position(start.X, start.Y),
+				End:   lsp.Position(end.X, end.Y),
+			},
+			Text: text,
+		}
+
 		b.Server.DidChange(b.AbsPath, b.version, []lspt.TextDocumentContentChangeEvent{change})
 	}
 }
@@ -1339,6 +1343,29 @@ func (b *Buffer) DiffStatus(lineN int) DiffStatus {
 	return b.diff[lineN]
 }
 
+func (b *Buffer) LSPHover() ([]string, error) {
+	if !b.HasLSP() {
+		return nil, lsp.ErrNotSupported
+	}
+
+	cur := b.GetActiveCursor()
+	info, err := b.Server.Hover(b.AbsPath, lsp.Position(cur.X, cur.Y))
+	if err != nil {
+		return nil, err
+	}
+
+	splits := strings.Split(info, "\n")
+
+	var filtered_splits []string
+	for _, str := range splits {
+		if strings.TrimSpace(str) != "" {
+			filtered_splits = append(filtered_splits, str)
+		}
+	}
+
+	return filtered_splits, nil
+}
+
 // SearchMatch returns true if the given location is within a match of the last search.
 // It is used for search highlighting
 func (b *Buffer) SearchMatch(pos Loc) bool {
@@ -1354,3 +1381,4 @@ func WriteLog(s string) {
 func GetLogBuf() *Buffer {
 	return LogBuf
 }
+
