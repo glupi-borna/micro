@@ -949,7 +949,7 @@ func splitWidth(text string, width int) []string {
 }
 
 func WrapString(text string, width int) []string {
-	ws := util.GetLeadingWhitespace([]byte(text))
+	ws := string(util.GetLeadingWhitespace([]byte(text)))
 	indent := len(ws)
 	words := strings.Fields(text)
 
@@ -972,13 +972,13 @@ func WrapString(text string, width int) []string {
 			word = words[ind]
 		} else {
 			if curlen > indent {
-				out = append(out, curstr)
+				out = append(out, ws + curstr)
 				curstr = ""
 				curlen = indent
 			} else {
 				bits := splitWidth(word, width-indent)
 				for _, w := range bits {
-					out = append(out, string(ws) + w)
+					out = append(out, ws + w)
 				}
 				curstr = ""
 				curlen = indent
