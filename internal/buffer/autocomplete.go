@@ -288,7 +288,7 @@ func LSPComplete(b *Buffer) []Completion {
 		}
 
 		if item.TextEdit != nil && len(item.TextEdit.NewText) > 0 {
-			completions[i].Edits = []Delta{Delta{
+			completions[i].Edits = []Delta{{
 				Text:  []byte(item.TextEdit.NewText),
 				Start: toLoc(item.TextEdit.Range.Start),
 				End:   toLoc(item.TextEdit.Range.End),
@@ -309,7 +309,7 @@ func LSPComplete(b *Buffer) []Completion {
 				t = item.Label
 			}
 			str := util.SliceEnd([]byte(t), c.X-argstart)
-			completions[i].Edits = []Delta{Delta{
+			completions[i].Edits = []Delta{{
 				Text:  str,
 				Start: Loc{c.X, c.Y},
 				End:   Loc{c.X, c.Y},
@@ -334,7 +334,7 @@ func ConvertCompletions(completions, suggestions []string, c *Cursor) []Completi
 		comp[i] = Completion{
 			Label: suggestions[i],
 		}
-		comp[i].Edits = []Delta{Delta{
+		comp[i].Edits = []Delta{{
 			Text:  []byte(completions[i]),
 			Start: Loc{c.X, c.Y},
 			End:   Loc{c.X, c.Y},
