@@ -130,7 +130,7 @@ type SharedBuffer struct {
 	origHash [md5.Size]byte
 
 	Server  *lsp.Server
-	version uint64
+	version int32
 }
 
 func (b *SharedBuffer) insert(pos Loc, value []byte) {
@@ -159,9 +159,9 @@ func (b *SharedBuffer) lspDidChange(start, end Loc, text string) {
 		b.version++
 		// TODO: convert to UTF16 codepoints
 		change := lspt.TextDocumentContentChangeEvent{
-			Range: &lspt.Range{
-				Start: lsp.Position(start.X, start.Y),
-				End:   lsp.Position(end.X, end.Y),
+			Range: lspt.Range{
+				Start: start.ToPos(),
+				End:   end.ToPos(),
 			},
 			Text: text,
 		}
@@ -1352,7 +1352,7 @@ func (b *Buffer) LSPHover() ([]string, error) {
 	}
 
 	cur := b.GetActiveCursor()
-	info, err := b.Server.Hover(b.AbsPath, lsp.Position(cur.X, cur.Y))
+	info, err := b.Server.Hover(b.AbsPath, cur.ToPos())
 	if err != nil {
 		return nil, err
 	}

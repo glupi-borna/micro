@@ -49,15 +49,15 @@ type RPCHoverAlternate struct {
 	Result     hoverAlternate `json:"result"`
 }
 
-func Position(x, y int) lsp.Position {
+func Position(x, y uint32) lsp.Position {
 	return lsp.Position{
-		Line:      float64(y),
-		Character: float64(x),
+		Line:      y,
+		Character: x,
 	}
 }
 
 func (s *Server) DocumentFormat(filename string, options lsp.FormattingOptions) ([]lsp.TextEdit, error) {
-	if !s.capabilities.DocumentFormattingProvider {
+	if !s.capabilities.DocumentFormattingProvider.(bool) {
 		return nil, ErrNotSupported
 	}
 	doc := lsp.TextDocumentIdentifier{
@@ -84,7 +84,7 @@ func (s *Server) DocumentFormat(filename string, options lsp.FormattingOptions) 
 }
 
 func (s *Server) DocumentRangeFormat(filename string, r lsp.Range, options lsp.FormattingOptions) ([]lsp.TextEdit, error) {
-	if !s.capabilities.DocumentRangeFormattingProvider {
+	if !s.capabilities.DocumentRangeFormattingProvider.(bool) {
 		return nil, ErrNotSupported
 	}
 
@@ -118,7 +118,7 @@ func (s *Server) Completion(filename string, pos lsp.Position) ([]lsp.Completion
 	}
 
 	cc := lsp.CompletionContext{
-		TriggerKind: lsp.Invoked,
+		TriggerKind: lsp.CompletionTriggerKindInvoked,
 	}
 
 	docpos := lsp.TextDocumentPositionParams{
@@ -155,7 +155,7 @@ func (s *Server) CompletionResolve() {
 }
 
 func (s *Server) Hover(filename string, pos lsp.Position) (string, error) {
-	if !s.capabilities.HoverProvider {
+	if !s.capabilities.HoverProvider.(bool) {
 		return "", ErrNotSupported
 	}
 

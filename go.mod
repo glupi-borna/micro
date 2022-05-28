@@ -8,8 +8,10 @@ require (
 	github.com/mattn/go-isatty v0.0.11
 	github.com/mattn/go-runewidth v0.0.7
 	github.com/mitchellh/go-homedir v1.1.0
+	github.com/segmentio/asm v1.2.0 // indirect
+	github.com/segmentio/encoding v0.3.5 // indirect
 	github.com/sergi/go-diff v1.1.0
-	github.com/stretchr/testify v1.4.0
+	github.com/stretchr/testify v1.7.0
 	github.com/yuin/gopher-lua v0.0.0-20191220021717-ab39c6098bdb
 	github.com/zyedidia/clipboard v1.0.3
 	github.com/zyedidia/glob v0.0.0-20170209203856-dd4023a66dc3
@@ -17,9 +19,10 @@ require (
 	github.com/zyedidia/pty v1.1.15 // indirect
 	github.com/zyedidia/tcell/v2 v2.0.8
 	github.com/zyedidia/terminal v0.0.0-20180726154117-533c623e2415
-	go.lsp.dev/protocol v0.8.0
+	go.lsp.dev/protocol v0.12.0
 	go.lsp.dev/uri v0.3.0
-	golang.org/x/text v0.3.2
+	golang.org/x/sys v0.0.0-20220520151302-bc2c85ada10a // indirect
+	golang.org/x/text v0.3.3
 	gopkg.in/yaml.v2 v2.2.8
 	layeh.com/gopher-luar v1.0.7
 )

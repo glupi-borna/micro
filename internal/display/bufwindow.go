@@ -942,7 +942,7 @@ func splitWidth(text string, width int) []string {
 	var out []string
 	textlen := len(text)
 	for ind:=0; ind < textlen; ind+=width {
-		end := util.Min(ind+width, textlen-1)
+		end := util.Clamp(ind+width, 0, textlen-1)
 		out = append(out, text[ind:end])
 	}
 	return out
@@ -1011,6 +1011,7 @@ func (w *BufWindow) displayTooltip() {
 	width+=4
 
 	width = util.Min(width, w.bufWidth - w.Buf.GetActiveCursor().X - 1)
+	width = util.Max(width, 1)
 
 	defstyle := config.DefStyle
 	if style, ok:= config.Colorscheme["tooltip"]; ok {

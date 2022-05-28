@@ -18,7 +18,6 @@ import (
 	"github.com/zyedidia/micro/v2/internal/screen"
 	"github.com/zyedidia/micro/v2/internal/shell"
 	"github.com/zyedidia/micro/v2/internal/util"
-	"github.com/zyedidia/micro/v2/internal/lsp"
 	"github.com/zyedidia/tcell/v2"
 	"go.lsp.dev/protocol"
 )
@@ -1950,16 +1949,16 @@ func (h *BufPane) AutoFormat() bool {
 
 	if h.Cursor.HasSelection() {
 		edits, err = h.Buf.Server.DocumentRangeFormat(h.Buf.AbsPath, protocol.Range{
-			Start: lsp.Position(h.Cursor.CurSelection[0].X, h.Cursor.CurSelection[0].Y),
-			End:   lsp.Position(h.Cursor.CurSelection[1].X, h.Cursor.CurSelection[1].Y),
+			Start: h.Cursor.CurSelection[0].ToPos(),
+			End:   h.Cursor.CurSelection[1].ToPos(),
 		}, protocol.FormattingOptions{
 			InsertSpaces: h.Buf.Settings["tabstospaces"].(bool),
-			TabSize:      h.Buf.Settings["tabsize"].(float64),
+			TabSize:      h.Buf.Settings["tabsize"].(uint32),
 		})
 	} else {
 		edits, err = h.Buf.Server.DocumentFormat(h.Buf.AbsPath, protocol.FormattingOptions{
 			InsertSpaces: h.Buf.Settings["tabstospaces"].(bool),
-			TabSize:      h.Buf.Settings["tabsize"].(float64),
+			TabSize:      h.Buf.Settings["tabsize"].(uint32),
 		})
 	}
 

@@ -159,3 +159,10 @@ func toLoc(r protocol.Position) Loc {
 		Y: int(r.Line),
 	}
 }
+
+func (l *Loc) ToPos() protocol.Position {
+	return protocol.Position{
+		Character: uint32(l.X),
+		Line: uint32(l.Y),
+	}
+}

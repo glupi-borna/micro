@@ -138,7 +138,7 @@ func StartServer(l Language) (*Server, error) {
 // The directory must be an absolute path
 func (s *Server) Initialize(directory string) {
 	params := lsp.InitializeParams{
-		ProcessID: float64(os.Getpid()),
+		ProcessID: int32(os.Getpid()),
 		RootURI:   uri.File(directory),
 		Capabilities: lsp.ClientCapabilities{
 			Workspace: &lsp.WorkspaceClientCapabilities{
@@ -152,7 +152,7 @@ func (s *Server) Initialize(directory string) {
 				Formatting: &lsp.TextDocumentClientCapabilitiesFormatting{
 					DynamicRegistration: false,
 				},
-				Completion: &lsp.TextDocumentClientCapabilitiesCompletion{
+				Completion: &lsp.CompletionTextDocumentClientCapabilities{
 					DynamicRegistration: false,
 					CompletionItem: &lsp.TextDocumentClientCapabilitiesCompletionItem{
 						SnippetSupport:          false,
@@ -160,6 +160,7 @@ func (s *Server) Initialize(directory string) {
 						DocumentationFormat:     []lsp.MarkupKind{lsp.PlainText},
 						DeprecatedSupport:       false,
 						PreselectSupport:        false,
+						InsertReplaceSupport:    true,
 					},
 					ContextSupport: false,
 				},
@@ -262,16 +263,16 @@ func (s *Server) receive() {
 
 func Style(d *lsp.Diagnostic) tcell.Style {
 	switch d.Severity {
-	case lsp.SeverityInformation:
-	case lsp.SeverityHint:
+	case lsp.DiagnosticSeverityInformation:
+	case lsp.DiagnosticSeverityHint:
 		if style, ok := config.Colorscheme["gutter-info"]; ok {
 			return style
 		}
-	case lsp.SeverityWarning:
+	case lsp.DiagnosticSeverityWarning:
 		if style, ok := config.Colorscheme["gutter-warning"]; ok {
 			return style
 		}
-	case lsp.SeverityError:
+	case lsp.DiagnosticSeverityError:
 		if style, ok := config.Colorscheme["gutter-error"]; ok {
 			return style
 		}

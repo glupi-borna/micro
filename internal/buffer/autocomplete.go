@@ -7,7 +7,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/zyedidia/micro/v2/internal/lsp"
 	"github.com/zyedidia/micro/v2/internal/util"
 	"go.lsp.dev/protocol"
 )
@@ -270,7 +269,7 @@ func LSPComplete(b *Buffer) []Completion {
 	}
 
 	c := b.GetActiveCursor()
-	pos := lsp.Position(c.X, c.Y)
+	pos := c.ToPos()
 	items, err := b.Server.Completion(b.AbsPath, pos)
 	if err != nil {
 		return nil
@@ -308,10 +307,9 @@ func LSPComplete(b *Buffer) []Completion {
 			} else {
 				t = item.Label
 			}
-			str := util.SliceEnd([]byte(t), c.X-argstart)
 			completions[i].Edits = []Delta{{
-				Text:  str,
-				Start: Loc{c.X, c.Y},
+				Text:  []byte(t),
+				Start: Loc{argstart, c.Y},
 				End:   Loc{c.X, c.Y},
 			}}
 		}
