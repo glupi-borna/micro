@@ -275,6 +275,7 @@ var defaultCommonSettings = map[string]interface{}{
 	"indentchar":     " ",
 	"keepautoindent": false,
 	"lsp":            true,
+	"lsp-autoimport": false,
 	"matchbrace":     true,
 	"mkparents":      false,
 	"permbackup":     false,
@@ -288,7 +289,7 @@ var defaultCommonSettings = map[string]interface{}{
 	"scrollmargin":   float64(3),
 	"scrollspeed":    float64(2),
 	"smartpaste":     true,
-	"softwrap":       false,
+	"softwrap":       true,
 	"splitbottom":    true,
 	"splitright":     true,
 	"statusformatl":  "$(filename) $(modified)($(line),$(col)) $(status.paste)| ft:$(opt:filetype) | $(opt:fileformat) | $(opt:encoding)",
@@ -299,7 +300,7 @@ var defaultCommonSettings = map[string]interface{}{
 	"tabsize":        float64(4),
 	"tabstospaces":   false,
 	"useprimary":     true,
-	"wordwrap":       false,
+	"wordwrap":       true,
 }
 
 func GetInfoBarOffset() int {
