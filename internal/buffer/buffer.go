@@ -1348,7 +1348,7 @@ func (b *Buffer) DiffStatus(lineN int) DiffStatus {
 
 func (b *Buffer) LSPHover() ([]string, error) {
 	if !b.HasLSP() {
-		return nil, lsp.ErrNotSupported
+		return nil, nil
 	}
 
 	cur := b.GetActiveCursor()
@@ -1367,6 +1367,58 @@ func (b *Buffer) LSPHover() ([]string, error) {
 	}
 
 	return filtered_splits, nil
+}
+
+func (b *Buffer) LSPDefinition() ([]lspt.Location, error) {
+	if !b.HasLSP() {
+		return nil, nil
+	}
+
+	cur := b.GetActiveCursor()
+	res, err := b.Server.GetDefinition(b.AbsPath, cur.ToPos())
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
+func (b *Buffer) LSPDeclaration() ([]lspt.Location, error) {
+	if !b.HasLSP() {
+		return nil, nil
+	}
+
+	cur := b.GetActiveCursor()
+	res, err := b.Server.GetDeclaration(b.AbsPath, cur.ToPos())
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
+func (b *Buffer) LSPTypeDefinition() ([]lspt.Location, error) {
+	if !b.HasLSP() {
+		return nil, nil
+	}
+
+	cur := b.GetActiveCursor()
+	res, err := b.Server.GetTypeDefinition(b.AbsPath, cur.ToPos())
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
+func (b *Buffer) LSPReferences() ([]lspt.Location, error) {
+	if !b.HasLSP() {
+		return nil, nil
+	}
+
+	cur := b.GetActiveCursor()
+	res, err := b.Server.FindReferences(b.AbsPath, cur.ToPos())
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
 }
 
 // SearchMatch returns true if the given location is within a match of the last search.

@@ -49,6 +49,24 @@ type RPCHoverAlternate struct {
 	Result     hoverAlternate `json:"result"`
 }
 
+type RPCLocation struct {
+	RPCVersion string 		   `json:"jsonrpc"`
+	ID         int             `json:"id"`
+	Result     lsp.Location    `json:"result"`
+}
+
+type RPCLocations struct {
+	RPCVersion string 		    `json:"jsonrpc"`
+	ID         int              `json:"id"`
+	Result     []lsp.Location   `json:"result"`
+}
+
+type RPCLocationLinks struct {
+	RPCVersion string 		        `json:"jsonrpc"`
+	ID         int                  `json:"id"`
+	Result     []lsp.LocationLink   `json:"result"`
+}
+
 func Position(x, y uint32) lsp.Position {
 	return lsp.Position{
 		Line:      y,
@@ -57,7 +75,7 @@ func Position(x, y uint32) lsp.Position {
 }
 
 func (s *Server) DocumentFormat(filename string, options lsp.FormattingOptions) ([]lsp.TextEdit, error) {
-	if !s.capabilities.DocumentFormattingProvider.(bool) {
+	if !capabilityCheck(s.capabilities.DocumentFormattingProvider) {
 		return nil, ErrNotSupported
 	}
 	doc := lsp.TextDocumentIdentifier{
@@ -84,7 +102,7 @@ func (s *Server) DocumentFormat(filename string, options lsp.FormattingOptions) 
 }
 
 func (s *Server) DocumentRangeFormat(filename string, r lsp.Range, options lsp.FormattingOptions) ([]lsp.TextEdit, error) {
-	if !s.capabilities.DocumentRangeFormattingProvider.(bool) {
+	if !capabilityCheck(s.capabilities.DocumentRangeFormattingProvider) {
 		return nil, ErrNotSupported
 	}
 
@@ -113,7 +131,7 @@ func (s *Server) DocumentRangeFormat(filename string, r lsp.Range, options lsp.F
 }
 
 func (s *Server) Completion(filename string, pos lsp.Position) ([]lsp.CompletionItem, error) {
-	if s.capabilities.CompletionProvider == nil {
+	if !capabilityCheck(s.capabilities.CompletionProvider) {
 		return nil, ErrNotSupported
 	}
 
@@ -121,12 +139,7 @@ func (s *Server) Completion(filename string, pos lsp.Position) ([]lsp.Completion
 		TriggerKind: lsp.CompletionTriggerKindInvoked,
 	}
 
-	docpos := lsp.TextDocumentPositionParams{
-		TextDocument: lsp.TextDocumentIdentifier{
-			URI: uri.File(filename),
-		},
-		Position: pos,
-	}
+	docpos := positionParams(filename, pos)
 
 	params := lsp.CompletionParams{
 		TextDocumentPositionParams: docpos,
@@ -155,16 +168,11 @@ func (s *Server) CompletionResolve() {
 }
 
 func (s *Server) Hover(filename string, pos lsp.Position) (string, error) {
-	if !s.capabilities.HoverProvider.(bool) {
+	if !capabilityCheck(s.capabilities.HoverProvider) {
 		return "", ErrNotSupported
 	}
 
-	params := lsp.TextDocumentPositionParams{
-		TextDocument: lsp.TextDocumentIdentifier{
-			URI: uri.File(filename),
-		},
-		Position: pos,
-	}
+	params := positionParams(filename, pos)
 
 	resp, err := s.sendRequest(lsp.MethodTextDocumentHover, params)
 	if err != nil {
@@ -195,4 +203,116 @@ func (s *Server) Hover(filename string, pos lsp.Position) (string, error) {
 		}
 	}
 	return "", nil
+}
+
+func (s *Server) GetDefinition(filename string, pos lsp.Position) ([]lsp.Location, error) {
+	if !capabilityCheck(s.capabilities.DefinitionProvider) {
+		return nil, ErrNotSupported
+	}
+
+	params := positionParams(filename, pos)
+
+	resp, err := s.sendRequest(lsp.MethodTextDocumentDefinition, params)
+	if err != nil {
+		return nil, err
+	}
+
+	return getLocations(resp)
+}
+
+func (s *Server) GetDeclaration(filename string, pos lsp.Position) ([]lsp.Location, error) {
+	if !capabilityCheck(s.capabilities.DeclarationProvider) {
+		return nil, ErrNotSupported
+	}
+
+	params := positionParams(filename, pos)
+
+	resp, err := s.sendRequest(lsp.MethodTextDocumentDeclaration, params)
+	if err != nil {
+		return nil, err
+	}
+
+	return getLocations(resp)
+}
+
+func (s *Server) GetTypeDefinition(filename string, pos lsp.Position) ([]lsp.Location, error) {
+	if !capabilityCheck(s.capabilities.TypeDefinitionProvider) {
+		return nil, ErrNotSupported
+	}
+
+	params := positionParams(filename, pos)
+
+	resp, err := s.sendRequest(lsp.MethodTextDocumentTypeDefinition, params)
+	if err != nil {
+		return nil, err
+	}
+
+	return getLocations(resp)
+}
+
+func (s *Server) FindReferences(filename string, pos lsp.Position) ([]lsp.Location, error) {
+	if !capabilityCheck(s.capabilities.ReferencesProvider) {
+		return nil, ErrNotSupported
+	}
+
+	params := lsp.ReferenceParams {
+		Context: lsp.ReferenceContext {
+			IncludeDeclaration: true,
+		},
+		TextDocumentPositionParams: positionParams(filename, pos),
+	}
+
+	resp, err := s.sendRequest(lsp.MethodTextDocumentReferences, params)
+	if err != nil {
+		return nil, err
+	}
+
+	return getLocations(resp)
+}
+
+func capabilityCheck(capability interface{}) bool {
+	b, ok := capability.(bool)
+	if ok {
+		return b
+	}
+	return capability != nil
+}
+
+func positionParams(filename string, pos lsp.Position) lsp.TextDocumentPositionParams {
+	return lsp.TextDocumentPositionParams {
+		TextDocument: lsp.TextDocumentIdentifier{
+			URI: uri.File(filename),
+		},
+		Position: pos,
+	}
+}
+
+func getLocations(resp []byte) ([]lsp.Location, error) {
+	var r RPCLocation
+	err := json.Unmarshal(resp, &r)
+	if err == nil {
+		return []lsp.Location{r.Result}, nil
+	}
+
+	var ra1 RPCLocations
+	err = json.Unmarshal(resp, &ra1)
+	if err == nil {
+		return ra1.Result, nil
+	}
+
+	var ra2 RPCLocationLinks
+	err = json.Unmarshal(resp, &ra2)
+	if err != nil {
+		return nil, err
+	}
+
+	var res []lsp.Location
+	for _, loc := range ra2.Result {
+		res = append(res, lsp.Location{
+			URI: loc.TargetURI,
+			Range: loc.TargetRange,
+		})
+	}
+
+	return res, nil
 }
