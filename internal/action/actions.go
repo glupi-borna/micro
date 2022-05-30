@@ -1938,6 +1938,60 @@ func (h *BufPane) Tooltip() bool {
 	return true
 }
 
+func (h *BufPane) Rename() bool {
+	b := h.Buf
+	rename_symbol, err := b.GetRenameSymbol()
+
+	if err != nil {
+		InfoBar.Error(err)
+		return false
+	}
+
+	InfoBar.Prompt(
+		"Rename: " + rename_symbol + " -> ", rename_symbol, "Rename", nil,
+		func(new_name string, canceled bool) {
+			if canceled {
+				return
+			}
+
+			new_name = strings.TrimSpace(new_name)
+			if new_name == "" {
+				InfoBar.Error("Cannot rename with empty string!")
+				return
+			}
+
+			if !b.HasLSP() {
+				h.ReplaceAllCmd([]string{ rename_symbol, new_name, "-l" })
+			} else {
+				res, err := b.Server.RenameSymbol(b.AbsPath, b.GetActiveCursor().ToPos(), new_name)
+				if err != nil {
+					InfoBar.Error(err)
+				}
+				h.ApplyWorkspaceEdits(res)
+			}
+		},
+	)
+
+	return true
+}
+
+func FindBuffer(absPath string) *buffer.Buffer {
+	for _, b := range buffer.OpenBuffers {
+		if b.AbsPath == absPath {
+			return b
+		}
+	}
+	return nil
+}
+
+func (h *BufPane) ApplyWorkspaceEdits(edit protocol.WorkspaceEdit) {
+	for uri, edits := range edit.Changes {
+		b := FindBuffer(uri.Filename())
+		if b == nil { continue }
+		b.ApplyEdits(edits)
+	}
+}
+
 // AutoFormat automatically formats the document using LSP
 func (h *BufPane) AutoFormat() bool {
 	if !h.Buf.HasLSP() {

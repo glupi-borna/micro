@@ -164,6 +164,11 @@ func (s *Server) Initialize(directory string) {
 					},
 					ContextSupport: false,
 				},
+				Rename: &lsp.RenameClientCapabilities{
+					DynamicRegistration: false,
+					PrepareSupport: true,
+					HonorsChangeAnnotations: false,
+				},
 				Hover: &lsp.TextDocumentClientCapabilitiesHover{
 					DynamicRegistration: false,
 					ContentFormat:       []lsp.MarkupKind{lsp.PlainText},

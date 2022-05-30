@@ -42,6 +42,7 @@ func InitCommands() {
 		"quit":       {(*BufPane).QuitCmd, nil},
 		"goto":       {(*BufPane).GotoCmd, nil},
 		"save":       {(*BufPane).SaveCmd, nil},
+		"rename":     {(*BufPane).RenameCmd, nil},
 		"replace":    {(*BufPane).ReplaceCmd, nil},
 		"replaceall": {(*BufPane).ReplaceAllCmd, nil},
 		"vsplit":     {(*BufPane).VSplitCmd, buffer.FileComplete},
@@ -889,6 +890,10 @@ func (h *BufPane) ReplaceCmd(args []string) {
 func (h *BufPane) ReplaceAllCmd(args []string) {
 	// aliased to Replace command
 	h.ReplaceCmd(append(args, "-a"))
+}
+
+func (h *BufPane) RenameCmd(args []string) {
+	h.Rename()
 }
 
 // TermCmd opens a terminal in the current view

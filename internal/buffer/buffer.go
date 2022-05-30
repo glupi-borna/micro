@@ -636,6 +636,60 @@ func (b *Buffer) ApplyDeltas(deltas []Delta) {
 	}
 }
 
+func (b *Buffer) GetRenameSymbol() (string, error) {
+	cur := b.GetActiveCursor()
+
+	if !b.HasLSP() {
+		return string(b.WordAt(cur.Loc)), nil
+	}
+
+	sym, err := b.Server.GetRenameSymbol(b.AbsPath, cur.ToPos())
+	if err != nil {
+		rpcerr, ok := err.(*lsp.RPCError)
+		if ok && rpcerr.LSPError.Code == lsp.MethodNotFound {
+			sym = lsp.RenameSymbol{
+				CanRename: true,
+				UseDefault: true,
+			}
+		} else {
+			return "", err
+		}
+	}
+
+	if ! sym.CanRename {
+		return "", errors.New("Symbol is not renamable!")
+	}
+
+	var prompt_string string
+	if sym.Placeholder != "" {
+		prompt_string = sym.Placeholder
+	} else if sym.UseRange {
+		line := b.Line(int(sym.Range.Start.Line))
+		prompt_string = line[sym.Range.Start.Character:sym.Range.End.Character]
+	} else if sym.UseDefault {
+		prompt_string = string(b.WordAt(cur.Loc))
+	} else {
+		prompt_string = string(b.WordAt(cur.Loc))
+	}
+
+	return prompt_string, nil
+}
+
+func (b *Buffer) GetRenameEdits(new_name string) (lspt.WorkspaceEdit, error) {
+	cur := b.GetActiveCursor()
+
+	if !b.HasLSP() {
+		return lspt.WorkspaceEdit{}, errors.New("No LSP!")
+	}
+
+	we, err := b.Server.RenameSymbol(b.AbsPath, cur.ToPos(), new_name)
+	if err != nil {
+		return lspt.WorkspaceEdit{}, err
+	}
+
+	return we, nil
+}
+
 // FileType returns the buffer's filetype
 func (b *Buffer) FileType() string {
 	return b.Settings["filetype"].(string)

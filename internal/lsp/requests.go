@@ -10,6 +10,54 @@ import (
 
 var ErrNotSupported = errors.New("Operation not supported by language server")
 
+type LSPError int
+
+const (
+	ParseError LSPError     = -32700;
+	InvalidRequest          = -32600;
+	MethodNotFound          = -32601;
+	InvalidParams           = -32602;
+	InternalError           = -32603;
+	ServerNotInitialized    = -32002;
+	UnknownErrorCode        = -32001;
+	RequestFailed           = -32803;
+	ServerCancelled         = -32802;
+	ContentModified         = -32801;
+	RequestCancelled        = -32800;
+)
+
+func (err LSPError) String() string {
+	switch err {
+		case ParseError: return "ParseError"
+		case InvalidRequest: return "InvalidRequest"
+		case MethodNotFound: return "MethodNotFound"
+		case InvalidParams: return "InvalidParams"
+		case InternalError: return "InternalError"
+		case ServerNotInitialized: return "ServerNotInitialized"
+		case UnknownErrorCode: return "UnknownErrorCode"
+		case RequestFailed: return "RequestFailed"
+		case ServerCancelled: return "ServerCancelled"
+		case ContentModified: return "ContentModified"
+		case RequestCancelled: return "RequestCancelled"
+	}
+	return "UnknownLSPError"
+}
+
+type lspError struct {
+	Code    LSPError             `json:"code"`
+	Message string               `json:"message"`
+}
+
+type RPCError struct {
+	RPCVersion string             `json:"jsonrpc"`
+	ID         int                `json:"id"`
+	LSPError   *lspError          `json:"error"`
+}
+
+func (e *RPCError) Error() string {
+	return e.LSPError.Code.String() + ": " + e.LSPError.Message
+}
+
 type RPCCompletion struct {
 	RPCVersion string             `json:"jsonrpc"`
 	ID         int                `json:"id"`
@@ -67,6 +115,63 @@ type RPCLocationLinks struct {
 	Result     []lsp.LocationLink   `json:"result"`
 }
 
+type RPCRange struct {
+	RPCVersion string               `json:"jsonrpc"`
+	ID         int                  `json:"id"`
+	Result     lsp.Range            `json:"result"`
+}
+
+type rangePlaceholder struct {
+	Range       lsp.Range           `json:"range"`
+	Placeholder string              `json:"placeholder"`
+}
+
+type RPCRangePlaceholder struct {
+	RPCVersion string               `json:"jsonrpc"`
+	ID         int                  `json:"id"`
+	Result     rangePlaceholder     `json:"result"`
+}
+
+type renameDefault struct {
+	DefaultBehavior bool            `json:"defaultBehavior"`
+}
+
+type RPCRenameDefault struct {
+	RPCVersion string               `json:"jsonrpc"`
+	ID         int                  `json:"id"`
+	Result     renameDefault        `json:"result"`
+}
+
+
+type RPCRename struct {
+	RPCVersion string               `json:"jsonrpc"`
+	ID         int                  `json:"id"`
+	Result     lsp.WorkspaceEdit    `json:"result"`
+}
+
+type RenameSymbol struct {
+	Range       lsp.Range
+	Placeholder string
+	UseDefault  bool
+	UseRange    bool
+	CanRename   bool
+}
+
+func (s *Server) sendRequestChecked(method string, params interface{}) ([]byte, error) {
+	resp, err := s.sendRequest(method, params)
+	if err != nil {
+		return resp, err
+	}
+
+	var rpcError RPCError
+	err = json.Unmarshal(resp, &rpcError)
+	if err == nil && rpcError.LSPError != nil {
+		return resp, &rpcError
+	}
+
+	return resp, nil
+}
+
 func Position(x, y uint32) lsp.Position {
 	return lsp.Position{
 		Line:      y,
@@ -87,7 +192,7 @@ func (s *Server) DocumentFormat(filename string, options lsp.FormattingOptions) 
 		TextDocument: doc,
 	}
 
-	resp, err := s.sendRequest(lsp.MethodTextDocumentFormatting, params)
+	resp, err := s.sendRequestChecked(lsp.MethodTextDocumentFormatting, params)
 	if err != nil {
 		return nil, err
 	}
@@ -116,7 +221,7 @@ func (s *Server) DocumentRangeFormat(filename string, r lsp.Range, options lsp.F
 		TextDocument: doc,
 	}
 
-	resp, err := s.sendRequest(lsp.MethodTextDocumentFormatting, params)
+	resp, err := s.sendRequestChecked(lsp.MethodTextDocumentFormatting, params)
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +250,7 @@ func (s *Server) Completion(filename string, pos lsp.Position) ([]lsp.Completion
 		TextDocumentPositionParams: docpos,
 		Context:                    &cc,
 	}
-	resp, err := s.sendRequest(lsp.MethodTextDocumentCompletion, params)
+	resp, err := s.sendRequestChecked(lsp.MethodTextDocumentCompletion, params)
 	if err != nil {
 		return nil, err
 	}
@@ -174,7 +279,7 @@ func (s *Server) Hover(filename string, pos lsp.Position) (string, error) {
 
 	params := positionParams(filename, pos)
 
-	resp, err := s.sendRequest(lsp.MethodTextDocumentHover, params)
+	resp, err := s.sendRequestChecked(lsp.MethodTextDocumentHover, params)
 	if err != nil {
 		return "", err
 	}
@@ -212,7 +317,7 @@ func (s *Server) GetDefinition(filename string, pos lsp.Position) ([]lsp.Locatio
 
 	params := positionParams(filename, pos)
 
-	resp, err := s.sendRequest(lsp.MethodTextDocumentDefinition, params)
+	resp, err := s.sendRequestChecked(lsp.MethodTextDocumentDefinition, params)
 	if err != nil {
 		return nil, err
 	}
@@ -227,7 +332,7 @@ func (s *Server) GetDeclaration(filename string, pos lsp.Position) ([]lsp.Locati
 
 	params := positionParams(filename, pos)
 
-	resp, err := s.sendRequest(lsp.MethodTextDocumentDeclaration, params)
+	resp, err := s.sendRequestChecked(lsp.MethodTextDocumentDeclaration, params)
 	if err != nil {
 		return nil, err
 	}
@@ -242,7 +347,7 @@ func (s *Server) GetTypeDefinition(filename string, pos lsp.Position) ([]lsp.Loc
 
 	params := positionParams(filename, pos)
 
-	resp, err := s.sendRequest(lsp.MethodTextDocumentTypeDefinition, params)
+	resp, err := s.sendRequestChecked(lsp.MethodTextDocumentTypeDefinition, params)
 	if err != nil {
 		return nil, err
 	}
@@ -262,12 +367,78 @@ func (s *Server) FindReferences(filename string, pos lsp.Position) ([]lsp.Locati
 		TextDocumentPositionParams: positionParams(filename, pos),
 	}
 
-	resp, err := s.sendRequest(lsp.MethodTextDocumentReferences, params)
+	resp, err := s.sendRequestChecked(lsp.MethodTextDocumentReferences, params)
 	if err != nil {
 		return nil, err
 	}
 
 	return getLocations(resp)
+}
+
+func (s *Server) GetRenameSymbol(filename string, pos lsp.Position) (RenameSymbol, error) {
+	if !capabilityCheck(s.capabilities.RenameProvider) {
+		return RenameSymbol{CanRename: false}, ErrNotSupported
+	}
+
+	resp, err := s.sendRequestChecked(lsp.MethodTextDocumentPrepareRename, positionParams(filename, pos))
+	if err != nil {
+		return RenameSymbol{CanRename: false}, err
+	}
+
+	var r RPCRange
+	err = json.Unmarshal(resp, &r)
+	if err == nil {
+		return RenameSymbol{
+			Range: r.Result,
+			UseRange: true,
+			CanRename: true,
+		}, nil
+	}
+
+	var ra1 RPCRangePlaceholder
+	err = json.Unmarshal(resp, &ra1)
+	if err == nil {
+		return RenameSymbol{
+			Range: ra1.Result.Range,
+			Placeholder: ra1.Result.Placeholder,
+			CanRename: true,
+		}, nil
+	}
+
+	var ra2 RPCRenameDefault
+	err = json.Unmarshal(resp, &ra2)
+	if err != nil {
+		return RenameSymbol{
+			UseDefault: ra2.Result.DefaultBehavior,
+			CanRename: true,
+		}, nil
+	}
+
+	return RenameSymbol{CanRename: false}, nil
+}
+
+func (s *Server) RenameSymbol(filename string, pos lsp.Position, new_name string) (lsp.WorkspaceEdit, error) {
+	if !capabilityCheck(s.capabilities.RenameProvider) {
+		return lsp.WorkspaceEdit{}, ErrNotSupported
+	}
+
+	params := lsp.RenameParams {
+		TextDocumentPositionParams: positionParams(filename, pos),
+		NewName: new_name,
+	}
+
+	resp, err := s.sendRequestChecked(lsp.MethodTextDocumentRename, params)
+	if err != nil {
+		return lsp.WorkspaceEdit{}, err
+	}
+
+	var r RPCRename
+	err = json.Unmarshal(resp, &r)
+	if err != nil {
+		return lsp.WorkspaceEdit{}, err
+	}
+
+	return r.Result, nil
 }
 
 func capabilityCheck(capability interface{}) bool {
