@@ -1,6 +1,7 @@
 package display
 
 import (
+	"github.com/zyedidia/tcell/v2"
 	runewidth "github.com/mattn/go-runewidth"
 	"github.com/zyedidia/micro/v2/internal/buffer"
 	"github.com/zyedidia/micro/v2/internal/config"
@@ -30,14 +31,15 @@ func (w *TabWindow) Resize(width, height int) {
 func (w *TabWindow) LocFromVisual(vloc buffer.Loc) int {
 	x := -w.hscroll
 
+	if vloc.Y != w.Y {
+		return -1
+	}
+
 	for i, n := range w.Names {
-		x++
 		s := util.CharacterCountInString(n)
-		if vloc.Y == w.Y && vloc.X < x+s {
-			return i
-		}
-		x += s
-		x += 3
+		x += s+2
+		if vloc.X < x { return i }
+		x++
 		if x >= w.Width {
 			break
 		}
@@ -58,7 +60,7 @@ func (w *TabWindow) Scroll(amt int) {
 func (w *TabWindow) TotalSize() int {
 	sum := 2
 	for _, n := range w.Names {
-		sum += runewidth.StringWidth(n) + 4
+		sum += runewidth.StringWidth(n) + 3
 	}
 	return sum - 4
 }
@@ -102,12 +104,12 @@ func (w *TabWindow) Display() {
 	if style, ok := config.Colorscheme["tabbar.active"]; ok {
 		tabBarActiveStyle = style
 	}
+	tabBarInactiveStyle := tabBarStyle
+	if style, ok := config.Colorscheme["tabbar.inactive"]; ok {
+		tabBarInactiveStyle = style
+	}
 
-	draw := func(r rune, n int, active bool) {
-		style := tabBarStyle
-		if active {
-			style = tabBarActiveStyle
-		}
+	draw := func(r rune, n int, style tcell.Style) {
 		for i := 0; i < n; i++ {
 			rw := runewidth.RuneWidth(r)
 			for j := 0; j < rw; j++ {
@@ -131,21 +133,21 @@ func (w *TabWindow) Display() {
 
 	for i, n := range w.Names {
 		if i == w.active {
-			draw('[', 1, true)
+			draw(' ', 1, tabBarActiveStyle)
+			for _, c := range n {
+				draw(c, 1, tabBarActiveStyle)
+			}
+			if i == len(w.Names)-1 { done = true }
+			draw(' ', 1, tabBarActiveStyle)
+			draw(' ', 1, tabBarStyle)
 		} else {
-			draw(' ', 1, false)
-		}
-		for _, c := range n {
-			draw(c, 1, i == w.active)
-		}
-		if i == len(w.Names)-1 {
-			done = true
-		}
-		if i == w.active {
-			draw(']', 1, true)
-			draw(' ', 2, true)
-		} else {
-			draw(' ', 3, false)
+			draw(' ', 1, tabBarInactiveStyle)
+			for _, c := range n {
+				draw(c, 1, tabBarInactiveStyle)
+			}
+			if i == len(w.Names)-1 { done = true }
+			draw(' ', 1, tabBarInactiveStyle)
+			draw(' ', 1, tabBarStyle)
 		}
 		if x >= w.Width {
 			break
@@ -153,6 +155,6 @@ func (w *TabWindow) Display() {
 	}
 
 	if x < w.Width {
-		draw(' ', w.Width-x, false)
+		draw(' ', w.Width-x, tabBarStyle)
 	}
 }

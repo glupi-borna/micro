@@ -1996,13 +1996,22 @@ func (h *BufPane) ApplyWorkspaceEdits(edit protocol.WorkspaceEdit) {
 		b.ApplyEdits(edits)
 	}
 
+	width, height := screen.Screen.Size()
+	iOffset := config.GetInfoBarOffset()
+
 	for _, change := range edit.DocumentChanges {
 		fn := change.TextDocument.URI.Filename()
 		b := FindBuffer(fn)
 		if b == nil {
 			var err error
 			b, err = buffer.NewBufferFromFile(fn, buffer.BTDefault)
-			if err != nil { continue }
+			if err != nil {
+				InfoBar.Error(err)
+				continue
+			}
+
+			new_tab := NewTabFromBuffer(0, 0, width, height-1-iOffset, b)
+			Tabs.AddTab(new_tab)
 		}
 		b.ApplyEdits(change.Edits)
 	}
