@@ -1966,6 +1966,11 @@ func (h *BufPane) Rename() bool {
 				res, err := b.Server.RenameSymbol(b.AbsPath, b.GetActiveCursor().ToPos(), new_name)
 				if err != nil {
 					InfoBar.Error(err)
+					return
+				}
+				if (len(res.Changes) + len(res.DocumentChanges)) == 0 {
+					InfoBar.Error("Cannot rename '" + rename_symbol + "'")
+					return
 				}
 				h.ApplyWorkspaceEdits(res)
 			}
@@ -1989,6 +1994,17 @@ func (h *BufPane) ApplyWorkspaceEdits(edit protocol.WorkspaceEdit) {
 		b := FindBuffer(uri.Filename())
 		if b == nil { continue }
 		b.ApplyEdits(edits)
+	}
+
+	for _, change := range edit.DocumentChanges {
+		fn := change.TextDocument.URI.Filename()
+		b := FindBuffer(fn)
+		if b == nil {
+			var err error
+			b, err = buffer.NewBufferFromFile(fn, buffer.BTDefault)
+			if err != nil { continue }
+		}
+		b.ApplyEdits(change.Edits)
 	}
 }
 
