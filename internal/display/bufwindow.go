@@ -990,7 +990,7 @@ func WrapString(text string, width int) []string {
 	}
 
 	if curstr != "" {
-		out = append(out, string(curstr))
+		out = append(out, string(ws + curstr))
 	}
 
 	return out
