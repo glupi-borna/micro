@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strings"
 
 	"gopkg.in/yaml.v2"
 )
@@ -95,7 +96,7 @@ func init() {
 // Header files make parsing more efficient when you only want to compute
 // on the headers of syntax files
 // A yaml file might take ~400us to parse while a header file only takes ~20us
-func MakeHeader(data []byte) (*Header, error) {
+func MakeHeader /**/ (data []byte) (*Header, error) {
 	lines := bytes.Split(data, []byte{'\n'})
 	if len(lines) < 3 {
 		return nil, errors.New("Header file has incorrect format")
@@ -284,6 +285,27 @@ func resolveIncludesInRegion(files []*File, region *region) {
 	}
 }
 
+func flattenStrings(arr []interface{}) ([]string, error) {
+	var strs []string
+
+	for _, v := range arr {
+		switch item := v.(type) {
+		case string:
+			strs = append(strs, fmt.Sprint(v))
+		case []interface{}:
+			new_strs, err := flattenStrings(item)
+			if err != nil {
+				return nil, err
+			}
+			strs = append(strs, new_strs...)
+		default:
+			return nil, fmt.Errorf("Bad type %T", item)
+		}
+	}
+
+	return strs, nil
+}
+
 func parseRules(input []interface{}, curRegion *region) (ru *rules, err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -320,6 +342,23 @@ func parseRules(input []interface{}, curRegion *region) (ru *rules, err error) {
 					groupNum := Groups[groupStr]
 					ru.patterns = append(ru.patterns, &pattern{groupNum, r})
 				}
+			case []interface{}:
+				strs, err := flattenStrings(object)
+				if err != nil {
+					return nil, err
+				}
+				r, err := regexp.Compile(strings.Join(strs, ""))
+				if err != nil {
+					return nil, err
+				}
+
+				groupStr := group.(string)
+				if _, ok := Groups[groupStr]; !ok {
+					numGroups++
+					Groups[groupStr] = numGroups
+				}
+				groupNum := Groups[groupStr]
+				ru.patterns = append(ru.patterns, &pattern{groupNum, r})
 			case map[interface{}]interface{}:
 				// region
 				region, err := parseRegion(group.(string), object, curRegion)
