@@ -209,11 +209,35 @@ func StringToColor(str string) (tcell.Color, bool) {
 			return GetColor256(num), true
 		}
 		// Check if this is a truecolor hex value
-		if len(str) == 7 && str[0] == '#' {
-			return tcell.GetColor(str), true
+		if c, ok := GetHex(str); ok {
+			return c, true
 		}
 		return tcell.ColorDefault, false
 	}
+}
+
+func GetHex(str string) (tcell.Color, bool) {
+	if str[0] != '#' {
+		return tcell.ColorDefault, false
+	}
+
+	switch len(str) {
+		case 7:
+		case 4: str = "#" + string(str[1]*2 + str[2]*2 + str[3]*2)
+		default: return tcell.ColorDefault, false
+	}
+
+	return tcell.GetColor(str), true
+}
+
+func GetHexStyle(str string) (tcell.Style, bool) {
+	main, ok := GetHex(str)
+	if !ok { return tcell.StyleDefault, false }
+	r, g, b := main.RGB()
+	lum := float64(r) * 0.299 + float64(g) * 0.587 + float64(b) * 0.144
+	fg := tcell.ColorWhite
+	if lum > 186 { fg = tcell.ColorBlack }
+	return tcell.StyleDefault.Foreground(fg).Background(main), true
 }
 
 // GetColor256 returns the tcell color for a number between 0 and 255

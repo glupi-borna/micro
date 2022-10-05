@@ -380,10 +380,43 @@ func (w *BufWindow) drawLineNum(lineNumStyle tcell.Style, markStyle tcell.Style,
 	vloc.X++
 }
 
+func isHexChar(b byte) bool {
+	if '0' <= b && b <= '9' { return true }
+	if 'a' <= b && b <= 'f' { return true }
+	if 'A' <= b && b <= 'F' { return true }
+	return false
+}
+
+func (w *BufWindow) isHexAt(bloc buffer.Loc) (bool, int) {
+	l := w.Buf.Line(bloc.Y)
+	ll := len(l)
+	if l[bloc.X] != '#' { return false, 0 }
+
+	i := 1
+	for ; i <= 7; i++ {
+		if bloc.X+i >= ll { return false, 0 }
+		chr := l[bloc.X+i]
+		if !isHexChar(chr) {
+			break
+		}
+	}
+
+	return i == 4 || i == 7, i
+}
+
 // getStyle returns the highlight style for the given character position
 // If there is no change to the current highlight style it just returns that
 func (w *BufWindow) getStyle(style tcell.Style, bloc buffer.Loc) (tcell.Style, bool) {
 	if group, ok := w.Buf.Match(bloc.Y)[bloc.X]; ok {
+		gs := group.String()
+		if gs == "micro.hexcolor" {
+			ok, hl := w.isHexAt(bloc)
+			if ok {
+				if s, ok := config.GetHexStyle(w.Buf.Line(bloc.Y)[bloc.X:bloc.X+hl]); ok {
+					return s, true
+				}
+			}
+		}
 		s := config.GetColor(group.String())
 		return s, true
 	}
@@ -942,7 +975,7 @@ func splitWidth(text string, width int) []string {
 	var out []string
 	textlen := len(text)
 	for ind:=0; ind < textlen; ind+=width {
-		end := util.Clamp(ind+width, 0, textlen-1)
+		end := util.Clamp(ind+width, 0, util.Max(textlen-1, 0))
 		out = append(out, text[ind:end])
 	}
 	return out
