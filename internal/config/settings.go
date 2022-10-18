@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"log"
 
 	"github.com/zyedidia/glob"
 	"github.com/zyedidia/json5"
@@ -42,14 +43,16 @@ func init() {
 
 // Options with validators
 var optionValidators = map[string]optionValidator{
-	"autosave":     validateNonNegativeValue,
-	"clipboard":    validateClipboard,
-	"tabsize":      validatePositiveValue,
-	"scrollmargin": validateNonNegativeValue,
-	"scrollspeed":  validateNonNegativeValue,
-	"colorscheme":  validateColorscheme,
-	"colorcolumn":  validateNonNegativeValue,
-	"fileformat":   validateLineEnding,
+	"autosave":     validateGreaterEqual(0),
+	"clipboard":    validateStringLiteral("internal", "external", "terminal"),
+	"tabsize":      validateGreater(0),
+	"scrollmargin": validateGreaterEqual(0),
+	"scrollspeed":  validateGreaterEqual(0),
+	"colorscheme":  validateCalculatedStringLiteral(GetColorschemeNames),
+	"colorcolumn":  validateAny(
+		validateArray(validateGreaterEqual(0)),
+		validateGreaterEqual(0)),
+	"fileformat":   validateStringLiteral("unix", "dos"),
 	"encoding":     validateEncoding,
 }
 
@@ -85,14 +88,24 @@ func ReadSettings() error {
 	return nil
 }
 
-func verifySetting(option string, value reflect.Type, def reflect.Type) bool {
-	var interfaceArr []interface{}
-	switch option {
-	case "pluginrepos", "pluginchannels":
-		return value.AssignableTo(reflect.TypeOf(interfaceArr))
-	default:
-		return def.AssignableTo(value)
+var interfaceArr []interface{}
+var InterfaceArr = reflect.TypeOf(interfaceArr)
+
+func verifySetting(option string, value interface{}, def reflect.Type) bool {
+	vtype := reflect.TypeOf(value)
+
+	if option == "pluginrepos" || option == "pluginchannels" {
+		return vtype.AssignableTo(InterfaceArr)
 	}
+
+	if def.Kind() == reflect.Slice && vtype.Kind() == reflect.Slice {
+		varray := value.([]interface{})
+		if len(varray) == 0 { return true }
+		eltype := reflect.TypeOf(varray[0])
+		return def.Elem().AssignableTo(eltype)
+	}
+
+	return def.AssignableTo(vtype)
 }
 
 // InitGlobalSettings initializes the options map and sets all options to their default values
@@ -103,9 +116,17 @@ func InitGlobalSettings() error {
 
 	for k, v := range parsedSettings {
 		if !strings.HasPrefix(reflect.TypeOf(v).String(), "map") {
-			if _, ok := GlobalSettings[k]; ok && !verifySetting(k, reflect.TypeOf(v), reflect.TypeOf(GlobalSettings[k])) {
-				err = fmt.Errorf("Global Error: setting '%s' has incorrect type (%s), using default value: %v (%s)", k, reflect.TypeOf(v), GlobalSettings[k], reflect.TypeOf(GlobalSettings[k]))
-				continue
+			if _, ok := GlobalSettings[k]; ok {
+				gtype := reflect.TypeOf(GlobalSettings[k])
+
+				if !verifySetting(k, v, gtype) {
+					err = fmt.Errorf(
+						"Global Error: setting '%s' (%v) has incorrect type (%s), using default value: %v (%s)",
+						k, v,
+						reflect.TypeOf(v),
+						GlobalSettings[k], gtype)
+					continue
+				}
 			}
 
 			GlobalSettings[k] = v
@@ -261,7 +282,7 @@ var defaultCommonSettings = map[string]interface{}{
 	"backup":         true,
 	"backupdir":      "",
 	"basename":       false,
-	"colorcolumn":    float64(0),
+	"colorcolumn":    []float64{0},
 	"cursorline":     true,
 	"diffgutter":     false,
 	"encoding":       "utf-8",
@@ -376,10 +397,14 @@ func DefaultAllSettings() map[string]interface{} {
 	return allsettings
 }
 
+var Float64 = reflect.TypeOf(float64(0))
+var String = reflect.TypeOf("")
+
 // GetNativeValue parses and validates a value for a given option
 func GetNativeValue(option string, realValue interface{}, value string) (interface{}, error) {
 	var native interface{}
-	kind := reflect.TypeOf(realValue).Kind()
+	rtype := reflect.TypeOf(realValue)
+	kind := rtype.Kind()
 	if kind == reflect.Bool {
 		b, err := util.ParseBool(value)
 		if err != nil {
@@ -394,12 +419,39 @@ func GetNativeValue(option string, realValue interface{}, value string) (interfa
 			return nil, ErrInvalidValue
 		}
 		native = float64(i)
+	} else if kind == reflect.Slice {
+		value = strings.TrimPrefix(value, "[")
+		value = strings.TrimSuffix(value, "]")
+
+		realArray, ok := realValue.([]interface{})
+		var eltype reflect.Type = nil
+		if ok {
+			if len(realArray) > 0 {
+				eltype = reflect.TypeOf(realArray[0])
+			}
+		}
+
+		if (eltype == Float64 || rtype == reflect.SliceOf(Float64)) {
+			strvals := strings.Split(value, ",")
+			vals := []float64{}
+			for _, str := range(strvals) {
+				num, err := strconv.Atoi(str)
+				if err != nil {
+					log.Println("Not a float string")
+					return nil, ErrInvalidValue
+				}
+				vals = append(vals, float64(num))
+			}
+			native = vals
+		} else {
+			return nil, ErrInvalidValue
+		}
 	} else {
 		return nil, ErrInvalidValue
 	}
 
 	if err := OptionIsValid(option, native); err != nil {
-		return nil, err
+		return nil, errors.New(option + ": expected option " + err.Error())
 	}
 	return native, nil
 }
@@ -415,79 +467,153 @@ func OptionIsValid(option string, value interface{}) error {
 
 // Option validators
 
-func validatePositiveValue(option string, value interface{}) error {
-	tabsize, ok := value.(float64)
-
-	if !ok {
-		return errors.New("Expected numeric type for " + option)
-	}
-
-	if tabsize < 1 {
-		return errors.New(option + " must be greater than 0")
-	}
-
-	return nil
+func ErrExpected(text string) error {
+	return errors.New(text)
 }
 
-func validateNonNegativeValue(option string, value interface{}) error {
-	nativeValue, ok := value.(float64)
-
-	if !ok {
-		return errors.New("Expected numeric type for " + option)
+func validateGreater(number float64) optionValidator {
+	return func (option string, value interface{}) error {
+		val, ok := value.(float64)
+		if !ok { return ErrExpected("to be a number")}
+		if val > number { return nil }
+		return ErrExpected("to be >" + strconv.FormatFloat(number, 'f', -1, 64))
 	}
-
-	if nativeValue < 0 {
-		return errors.New(option + " must be non-negative")
-	}
-
-	return nil
 }
 
-func validateColorscheme(option string, value interface{}) error {
-	colorscheme, ok := value.(string)
-
-	if !ok {
-		return errors.New("Expected string type for colorscheme")
+func validateLess(number float64) optionValidator {
+	return func (option string, value interface{}) error {
+		val, ok := value.(float64)
+		if !ok { return ErrExpected("to be a number")}
+		if val < number { return nil }
+		return ErrExpected("to be <" + strconv.FormatFloat(number, 'f', -1, 64))
 	}
-
-	if !ColorschemeExists(colorscheme) {
-		return errors.New(colorscheme + " is not a valid colorscheme")
-	}
-
-	return nil
 }
 
-func validateClipboard(option string, value interface{}) error {
-	val, ok := value.(string)
-
-	if !ok {
-		return errors.New("Expected string type for clipboard")
+func validateGreaterEqual(number float64) optionValidator {
+	return func (option string, value interface{}) error {
+		val, ok := value.(float64)
+		if !ok { return ErrExpected("to be a number")}
+		if val >= number { return nil }
+		return ErrExpected("to be >=" + strconv.FormatFloat(number, 'f', -1, 64))
 	}
-
-	switch val {
-	case "internal", "external", "terminal":
-	default:
-		return errors.New(option + " must be 'internal', 'external', or 'terminal'")
-	}
-
-	return nil
 }
 
-func validateLineEnding(option string, value interface{}) error {
-	endingType, ok := value.(string)
-
-	if !ok {
-		return errors.New("Expected string type for file format")
+func validateLessEqual(number float64) optionValidator {
+	return func (option string, value interface{}) error {
+		val, ok := value.(float64)
+		if !ok { return ErrExpected("to be a number")}
+		if val <= number { return nil }
+		return ErrExpected("to be <=" + strconv.FormatFloat(number, 'f', -1, 64))
 	}
+}
 
-	if endingType != "unix" && endingType != "dos" {
-		return errors.New("File format must be either 'unix' or 'dos'")
+
+func validateAny(validators ...optionValidator) optionValidator {
+	return func(option string, value interface{}) error {
+		var errs []error
+		var succ = false
+		for _, validator := range(validators) {
+			err := validator(option, value)
+			if err != nil { errs = append(errs, err) } else { succ = true }
+		}
+
+		if !succ {
+			msg := ""
+			for i, err := range(errs) {
+				if i != 0 { msg += " or " }
+				msg += err.Error()
+			}
+
+			return ErrExpected(msg)
+		}
+
+		return nil
 	}
+}
 
-	return nil
+func validateAll(validators ...optionValidator) optionValidator {
+	return func(option string, value interface{}) error {
+		var errs []error
+		for _, validator := range(validators) {
+			err := validator(option, value)
+			if err != nil { errs = append(errs, err) }
+		}
+
+		if len(errs) > 0 {
+			msg := ""
+			for i, err := range(errs) {
+				if i != 0 { msg += " and "}
+				msg += err.Error()
+			}
+
+			return ErrExpected(msg)
+		}
+
+		return nil
+	}
+}
+
+func validateArray(validator optionValidator) optionValidator {
+	return func(option string, value interface{}) error {
+		list_value := reflect.ValueOf(value)
+		if list_value.Kind() != reflect.Slice {
+			return ErrExpected("to be an array")
+		}
+
+		for i:=0 ; i<list_value.Len(); i++ {
+			val := list_value.Index(i)
+			err := validator(option, val.Interface())
+			if err != nil {
+				return ErrExpected("array elements to be " + err.Error())
+			}
+		}
+
+		return nil
+	}
+}
+
+func validateType(t reflect.Type) optionValidator {
+	return func(option string, value interface{}) error {
+		switch reflect.TypeOf(value) {
+			case t: return nil
+			default: return ErrExpected("to be of type " + t.Name())
+		}
+	}
+}
+
+func validateStringLiteral(lits ...string) optionValidator {
+	return func(option string, value interface{}) error {
+		val, ok := value.(string)
+		if !ok { return ErrExpected("to be a string") }
+
+		for _, lit := range(lits) {
+			if val == lit { return nil }
+		}
+
+		msg := ""
+		for i, lit := range(lits) {
+			if i == 0 {
+			} else if i == len(lits) - 1 {
+				msg += " or "
+			} else {
+				msg += ", "
+			}
+
+			msg += lit
+		}
+
+		return ErrExpected("to be " + msg)
+	}
+}
+
+func validateCalculatedStringLiteral(fn func() []string) optionValidator {
+	return func(option string, value interface{}) error {
+		return validateStringLiteral(fn()...)(option, value)
+	}
 }
 
 func validateEncoding(option string, value interface{}) error {
 	_, err := htmlindex.Get(value.(string))
-	return err
+	if err != nil { return ErrExpected("to be a valid encoding") }
+	return nil
 }

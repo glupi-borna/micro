@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 	"unicode/utf8"
+	"reflect"
 
 	humanize "github.com/dustin/go-humanize"
 	lua "github.com/yuin/gopher-lua"
@@ -80,6 +81,8 @@ func Import(pkg string) *lua.LTable {
 		return importHTTP()
 	case "archive/zip":
 		return importArchiveZip()
+	case "reflect":
+		return importReflect()
 	default:
 		return nil
 	}
@@ -594,6 +597,21 @@ func importArchiveZip() *lua.LTable {
 	L.SetField(pkg, "OpenReader", luar.New(L, zip.OpenReader))
 	L.SetField(pkg, "NewReader", luar.New(L, zip.NewReader))
 	L.SetField(pkg, "NewWriter", luar.New(L, zip.NewWriter))
+
+	return pkg
+}
+
+func importReflect() *lua.LTable {
+	pkg := L.NewTable()
+
+	L.SetField(pkg, "TypeOf", luar.New(L, reflect.TypeOf))
+	L.SetField(pkg, "Slice", luar.New(L, reflect.Slice))
+	L.SetField(pkg, "Int", luar.New(L, reflect.Int))
+	L.SetField(pkg, "Float64", luar.New(L, reflect.Float64))
+	L.SetField(pkg, "String", luar.New(L, reflect.String))
+	L.SetField(pkg, "Bool", luar.New(L, reflect.Bool))
+	L.SetField(pkg, "Interface", luar.New(L, reflect.Interface))
+	L.SetField(pkg, "Map", luar.New(L, reflect.Map))
 
 	return pkg
 }

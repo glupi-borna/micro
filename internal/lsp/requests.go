@@ -3,6 +3,8 @@ package lsp
 import (
 	"encoding/json"
 	"errors"
+	"reflect"
+	"fmt"
 
 	lsp "go.lsp.dev/protocol"
 	"go.lsp.dev/uri"
@@ -70,31 +72,25 @@ type RPCCompletionAlternate struct {
 	Result     []lsp.CompletionItem `json:"result"`
 }
 
-type RPCHover struct {
-	RPCVersion string    `json:"jsonrpc"`
-	ID         int       `json:"id"`
-	Result     lsp.Hover `json:"result"`
-}
-
 type RPCFormat struct {
 	RPCVersion string         `json:"jsonrpc"`
 	ID         int            `json:"id"`
 	Result     []lsp.TextEdit `json:"result"`
 }
 
-type hoverAlternate struct {
+type LSPHover struct {
 	// Contents is the hover's content
-	Contents []interface{} `json:"contents"`
+	Contents interface{} `json:"contents"`
 
 	// Range an optional range is a range inside a text document
 	// that is used to visualize a hover, e.g. by changing the background color.
 	Range lsp.Range `json:"range,omitempty"`
 }
 
-type RPCHoverAlternate struct {
+type RPCHover struct {
 	RPCVersion string         `json:"jsonrpc"`
 	ID         int            `json:"id"`
-	Result     hoverAlternate `json:"result"`
+	Result     LSPHover       `json:"result"`
 }
 
 type RPCLocation struct {
@@ -272,6 +268,52 @@ func (s *Server) CompletionResolve() {
 
 }
 
+func extractString(value reflect.Value, original interface{}) string {
+	rt := value.Type()
+	switch rt.Kind() {
+		case reflect.String:
+			return value.String()
+
+		case reflect.Map:
+			value := value.MapIndex(reflect.ValueOf("value"))
+			if value.IsZero() { return "err: map: zero value" }
+			if !value.IsValid() { return "err: map: invalid value" }
+			return extractString(value, original)
+
+		case reflect.Slice: fallthrough
+		case reflect.Array:
+			len := value.Len()
+
+			str := ""
+			for i:=0; i<len; i++ {
+				str += extractString(value.Index(i), original) + "\n"
+			}
+
+			return str
+
+		case reflect.Struct:
+			len := rt.NumField()
+			str := ""
+			for i:=0; i<len; i++ {
+				str += rt.Field(i).Name + ":" + rt.Field(i).Type.Name() + "\n"
+			}
+			return "err: struct: "+str
+
+		default:
+			iface := value.Interface()
+			switch val := iface.(type){
+				case string: return val
+				case map[string]interface{}:
+					v, ok := val["value"]
+					if !ok { return "no value field!" }
+					str, ok := v.(string)
+					if !ok { return "value field is not string!" }
+					return str
+			}
+			return "err: interface: "+fmt.Sprintf("%v", rt.Kind().String())+": "+fmt.Sprintf("%v", original)
+	}
+}
+
 func (s *Server) Hover(filename string, pos lsp.Position) (string, error) {
 	if !capabilityCheck(s.capabilities.HoverProvider) {
 		return "", ErrNotSupported
@@ -284,30 +326,13 @@ func (s *Server) Hover(filename string, pos lsp.Position) (string, error) {
 		return "", err
 	}
 
-	var r RPCHover
-	err = json.Unmarshal(resp, &r)
-	if err == nil {
-		return r.Result.Contents.Value, nil
-	}
-
-	var ra RPCHoverAlternate
+	var ra RPCHover
 	err = json.Unmarshal(resp, &ra)
 	if err != nil {
 		return "", err
 	}
 
-	for _, c := range ra.Result.Contents {
-		switch t := c.(type) {
-		case string:
-			return t, nil
-		case map[string]interface{}:
-			s, ok := t["value"].(string)
-			if ok {
-				return s, nil
-			}
-		}
-	}
-	return "", nil
+	return extractString(reflect.ValueOf(ra.Result.Contents), ra.Result.Contents), nil
 }
 
 func (s *Server) GetDefinition(filename string, pos lsp.Position) ([]lsp.Location, error) {

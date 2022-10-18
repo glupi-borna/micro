@@ -367,6 +367,24 @@ func IntOpt(opt interface{}) int {
 	return int(opt.(float64))
 }
 
+func IntOpts(opts interface{}) []int {
+	fopts, ok := opts.([]float64)
+	iopts := []int{}
+
+	if ok {
+		for _, opt := range(fopts) {
+			iopts = append(iopts, int(opt))
+		}
+	} else {
+		ifopts, ok := opts.([]interface{})
+		if !ok { return []int{} }
+		for _, opt := range(ifopts) {
+			iopts = append(iopts, IntOpt(opt))
+		}
+	}
+	return iopts
+}
+
 // GetCharPosInLine gets the char position of a visual x y
 // coordinate (this is necessary because tabs are 1 char but
 // 4 visual spaces)

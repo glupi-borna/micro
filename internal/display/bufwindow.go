@@ -525,7 +525,7 @@ func (w *BufWindow) displayBuffer() {
 	cursorline := b.Settings["cursorline"].(bool)
 
 	tabsize := util.IntOpt(b.Settings["tabsize"])
-	colorcolumn := util.IntOpt(b.Settings["colorcolumn"])
+	colorcolumns := util.IntOpts(b.Settings["colorcolumn"])
 
 	// this represents the current draw position
 	// within the current window
@@ -666,9 +666,11 @@ func (w *BufWindow) displayBuffer() {
 					}
 
 					if s, ok := config.Colorscheme["color-column"]; ok {
-						if colorcolumn != 0 && vloc.X-w.gutterOffset+w.StartCol == colorcolumn && !dontOverrideBackground {
-							fg, _, _ := s.Decompose()
-							style = style.Background(fg)
+						for _, colorcolumn := range(colorcolumns) {
+							if colorcolumn != 0 && vloc.X-w.gutterOffset+w.StartCol == colorcolumn && !dontOverrideBackground {
+								fg, _, _ := s.Decompose()
+								style = style.Background(fg)
+							}
 						}
 					}
 
@@ -847,9 +849,11 @@ func (w *BufWindow) displayBuffer() {
 		for i := vloc.X; i < maxWidth; i++ {
 			curStyle := style
 			if s, ok := config.Colorscheme["color-column"]; ok {
-				if colorcolumn != 0 && i-w.gutterOffset+w.StartCol == colorcolumn {
-					fg, _, _ := s.Decompose()
-					curStyle = style.Background(fg)
+				for _, colorcolumn := range(colorcolumns) {
+					if colorcolumn != 0 && i-w.gutterOffset+w.StartCol == colorcolumn {
+						fg, _, _ := s.Decompose()
+						curStyle = style.Background(fg)
+					}
 				}
 			}
 			screen.SetContent(i+w.X, vloc.Y+w.Y, ' ', nil, curStyle)
@@ -976,6 +980,7 @@ func splitWidth(text string, width int) []string {
 	textlen := len(text)
 	for ind:=0; ind < textlen; ind+=width {
 		end := util.Clamp(ind+width, 0, util.Max(textlen-1, 0))
+		if (end<0) { return out }
 		out = append(out, text[ind:end])
 	}
 	return out

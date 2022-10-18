@@ -42,6 +42,17 @@ func GetColor(color string) tcell.Style {
 	return st
 }
 
+func GetColorschemeNames() []string {
+	var names []string
+	files := ListRuntimeFiles(RTColorscheme)
+
+	for _, file := range(files) {
+		names = append(names, file.Name())
+	}
+
+	return names
+}
+
 // ColorschemeExists checks if a given colorscheme exists
 func ColorschemeExists(colorschemeName string) bool {
 	return FindRuntimeFile(RTColorscheme, colorschemeName) != nil
