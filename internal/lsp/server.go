@@ -105,6 +105,13 @@ func StartServer(l Language) (*Server, error) {
 
 	c := exec.Command(l.Command, l.Args...)
 
+	var env = os.Environ()
+	env = append(env, l.Env...)
+	c.Env = env
+	if len(l.Cwd) > 0 {
+		c.Dir = l.Cwd
+	}
+
 	c.Stderr = log.Writer()
 
 	stdin, err := c.StdinPipe()

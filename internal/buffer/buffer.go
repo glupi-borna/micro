@@ -788,6 +788,11 @@ func (b *Buffer) WordAt(loc Loc) []byte {
 	return b.Substr(start, end)
 }
 
+// WordAt returns the word around a given location in the buffer
+func (b *Buffer) WordAtAsStr(loc Loc) string {
+	return string(b.WordAt(loc))
+}
+
 // Modified returns if this buffer has been modified since
 // being opened
 func (b *Buffer) Modified() bool {
