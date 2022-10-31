@@ -23,7 +23,7 @@ can change it!
 | Shift-arrows                | Move and select text                                                                      |
 | Alt(Ctrl on Mac)-LeftArrow  | Move to the beginning of the current line                                                 |
 | Alt(Ctrl on Mac)-RightArrow | Move to the end of the current line                                                       |
-| Home                        | Move to the beginning of text on the current line                                                 |
+| Home                        | Move to the beginning of text on the current line                                         |
 | End                         | Move to the end of the current line                                                       |
 | Ctrl(Alt on Mac)-LeftArrow  | Move cursor one word left                                                                 |
 | Ctrl(Alt on Mac)-RightArrow | Move cursor one word right                                                                |
@@ -125,7 +125,7 @@ can change it!
 
 ### Function keys.
 
-Warning! The function keys may not work in all terminals! 
+Warning! The function keys may not work in all terminals!
 
 | Key   | Description of function   |
 |------ |-------------------------- |
