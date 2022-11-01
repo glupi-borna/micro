@@ -269,6 +269,8 @@ func (s *Server) CompletionResolve() {
 }
 
 func extractString(value reflect.Value, original interface{}) string {
+	if (original == nil) { return "" }
+	if (value.IsZero()) { return "err: zero value" }
 	rt := value.Type()
 	switch rt.Kind() {
 		case reflect.String:
