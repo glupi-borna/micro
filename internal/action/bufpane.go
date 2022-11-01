@@ -25,6 +25,8 @@ type BufMouseAction func(*BufPane, *tcell.EventMouse) bool
 // BufBindings stores the bindings for the buffer pane type.
 var BufBindings *KeyTree
 
+var OpenBufPanes []*BufPane
+
 // BufKeyActionGeneral makes a general pane action from a BufKeyAction.
 func BufKeyActionGeneral(a BufKeyAction) PaneKeyAction {
 	return func(p Pane) bool {
@@ -240,6 +242,7 @@ type BufPane struct {
 // NewBufPane creates a new buffer pane with the given window.
 func NewBufPane(buf *buffer.Buffer, win display.BWindow, tab *Tab) *BufPane {
 	h := new(BufPane)
+	OpenBufPanes = append(OpenBufPanes, h)
 	h.Buf = buf
 	h.BWindow = win
 	h.tab = tab
@@ -596,6 +599,15 @@ func (h *BufPane) HSplitBuf(buf *buffer.Buffer) *BufPane {
 // Close this pane.
 func (h *BufPane) Close() {
 	h.Buf.Close()
+
+	for i, pane := range OpenBufPanes {
+		if h == pane {
+			copy(OpenBufPanes[i:], OpenBufPanes[i+1:])
+			OpenBufPanes[len(OpenBufPanes)-1] = nil
+			OpenBufPanes = OpenBufPanes[:len(OpenBufPanes)-1]
+			return
+		}
+	}
 }
 
 // SetActive marks this pane as active.

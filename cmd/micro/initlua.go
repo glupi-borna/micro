@@ -57,6 +57,18 @@ func luaImportMicro() *lua.LTable {
 	ulua.L.SetField(pkg, "Tabs", luar.New(ulua.L, func() *action.TabList {
 		return action.Tabs
 	}))
+	ulua.L.SetField(pkg, "AllPanes", luar.New(ulua.L, func() []*action.BufPane {
+		return action.OpenBufPanes
+	}))
+	ulua.L.SetField(pkg, "FindPanesByBufferID", luar.New(ulua.L, func(id int) []*action.BufPane {
+		var out []*action.BufPane
+		for _, pane := range(action.OpenBufPanes) {
+			if pane.Buf.ID == id {
+				out = append(out, pane)
+			}
+		}
+		return out
+	}))
 	ulua.L.SetField(pkg, "Lock", luar.New(ulua.L, ulua.Lock))
 
 	return pkg
@@ -140,6 +152,7 @@ func luaImportMicroBuffer() *lua.LTable {
 	ulua.L.SetField(pkg, "ByteOffset", luar.New(ulua.L, buffer.ByteOffset))
 	ulua.L.SetField(pkg, "Log", luar.New(ulua.L, buffer.WriteLog))
 	ulua.L.SetField(pkg, "LogBuf", luar.New(ulua.L, buffer.GetLogBuf))
+	ulua.L.SetField(pkg, "FindBufferByID", luar.New(ulua.L, buffer.FindBufferByID))
 
 	return pkg
 }

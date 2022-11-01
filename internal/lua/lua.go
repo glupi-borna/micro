@@ -31,8 +31,8 @@ var L *lua.LState
 var Lock sync.Mutex
 
 // LoadFile loads a lua file
-func LoadFile(module string, file string, data []byte) error {
-	pluginDef := []byte("module(\"" + module + "\", package.seeall)")
+func LoadFile(module string, file string, data []byte, code string) error {
+	pluginDef := []byte("module(\"" + module + "\", package.seeall)\n"+code+"\n")
 
 	if fn, err := L.Load(bytes.NewReader(append(pluginDef, data...)), file); err != nil {
 		return err
@@ -450,9 +450,15 @@ func importFilePath() *lua.LTable {
 	return pkg
 }
 
+func makeBuilder() *strings.Builder {
+	var s strings.Builder
+	return &s
+}
+
 func importStrings() *lua.LTable {
 	pkg := L.NewTable()
 
+	L.SetField(pkg, "Builder", luar.New(L, makeBuilder))
 	L.SetField(pkg, "Contains", luar.New(L, strings.Contains))
 	L.SetField(pkg, "ContainsAny", luar.New(L, strings.ContainsAny))
 	L.SetField(pkg, "ContainsRune", luar.New(L, strings.ContainsRune))

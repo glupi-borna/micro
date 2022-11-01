@@ -41,6 +41,7 @@ var (
 	// LogBuf is a reference to the log buffer which can be opened with the
 	// `> log` command
 	LogBuf *Buffer
+	BufferID int
 )
 
 // The BufType defines what kind of buffer this is
@@ -245,6 +246,8 @@ type Buffer struct {
 	LastSearchRegex bool
 	// HighlightSearch enables highlighting all instances of the last successful search
 	HighlightSearch bool
+
+	ID int
 }
 
 // NewBufferFromFileAtLoc opens a new buffer with a given cursor location
@@ -336,6 +339,8 @@ func NewBuffer(r io.Reader, size int64, path string, startcursor Loc, btype BufT
 	}
 
 	b := new(Buffer)
+	b.ID = BufferID
+	BufferID++
 
 	found := false
 	if len(path) > 0 {
@@ -786,6 +791,11 @@ func (b *Buffer) WordAt(loc Loc) []byte {
 	}
 
 	return b.Substr(start, end)
+}
+
+// WordAt returns the word around a given location in the buffer
+func (b *Buffer) WordAtAsStr(loc Loc) string {
+	return string(b.WordAt(loc))
 }
 
 // Modified returns if this buffer has been modified since
@@ -1491,3 +1501,9 @@ func GetLogBuf() *Buffer {
 	return LogBuf
 }
 
+func FindBufferByID(id int) *Buffer {
+	for _, buf := range OpenBuffers {
+		if buf.ID == id { return buf }
+	}
+	return nil
+}

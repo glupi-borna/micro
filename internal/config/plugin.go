@@ -90,12 +90,20 @@ func (p *Plugin) Load() error {
 	if v, ok := GlobalSettings[p.Name]; ok && !v.(bool) {
 		return nil
 	}
+
+	pluginDir := ConfigDir + "/plug/" + p.DirName
+
 	for _, f := range p.Srcs {
 		dat, err := f.Data()
 		if err != nil {
 			return err
 		}
-		err = ulua.LoadFile(p.Name, f.Name(), dat)
+		pluginFile := pluginDir + "/" + f.Name() + ".lua"
+		code := "local __FILE__ = '" + pluginFile + "' ; "
+		code += "local __DIR__  = '" + pluginDir + "' ; "
+		code += "package.path = '" + pluginDir + "/?.lua;' .. package.path ; "
+
+		err = ulua.LoadFile(p.Name, f.Name(), dat, code)
 		if err != nil {
 			return err
 		}

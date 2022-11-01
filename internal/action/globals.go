@@ -12,6 +12,7 @@ var LogBufPane *BufPane
 func InitGlobals() {
 	InfoBar = NewInfoBar()
 	buffer.LogBuf = buffer.NewBufferFromString("", "Log", buffer.BTLog)
+	buffer.BufferID = 1
 }
 
 // GetInfoBar returns the infobar pane

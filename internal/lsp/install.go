@@ -23,6 +23,8 @@ type Language struct {
 	Command string     `yaml:"command"`
 	Args    []string   `yaml:"args"`
 	Install [][]string `yaml:"install"`
+	Env []string       `yaml:"env"`
+	Cwd string         `yaml:"cwd"`
 }
 
 var conf *Config
