@@ -12,6 +12,7 @@ import (
 	"github.com/zyedidia/micro/v2/internal/display"
 	ulua "github.com/zyedidia/micro/v2/internal/lua"
 	"github.com/zyedidia/micro/v2/internal/screen"
+	"github.com/zyedidia/micro/v2/internal/util"
 	"github.com/zyedidia/tcell/v2"
 )
 
@@ -238,10 +239,14 @@ type BufPane struct {
 
 	// remember original location of a search in case the search is canceled
 	searchOrig buffer.Loc
+
+	// The pane may not yet be fully initialized after its creation
+	// since we may not know the window geometry yet. In such case we finish
+	// its initialization a bit later, after the initial resize.
+	initialized bool
 }
 
-// NewBufPane creates a new buffer pane with the given window.
-func NewBufPane(buf *buffer.Buffer, win display.BWindow, tab *Tab) *BufPane {
+func newBufPane(buf *buffer.Buffer, win display.BWindow, tab *Tab) *BufPane {
 	h := new(BufPane)
 	h.Buf = buf
 	h.BWindow = win
@@ -250,8 +255,13 @@ func NewBufPane(buf *buffer.Buffer, win display.BWindow, tab *Tab) *BufPane {
 	h.Cursor = h.Buf.GetActiveCursor()
 	h.mousePressed = make(map[MouseEvent]bool)
 
-	config.RunPluginFn("onBufPaneOpen", luar.New(ulua.L, h))
+	return h
+}
 
+// NewBufPane creates a new buffer pane with the given window.
+func NewBufPane(buf *buffer.Buffer, win display.BWindow, tab *Tab) *BufPane {
+	h := newBufPane(buf, win, tab)
+	h.finishInitialize()
 	return h
 }
 
@@ -259,7 +269,25 @@ func NewBufPane(buf *buffer.Buffer, win display.BWindow, tab *Tab) *BufPane {
 // creates a buf window.
 func NewBufPaneFromBuf(buf *buffer.Buffer, tab *Tab) *BufPane {
 	w := display.NewBufWindow(0, 0, 0, 0, buf)
-	return NewBufPane(buf, w, tab)
+	h := newBufPane(buf, w, tab)
+	// Postpone finishing initializing the pane until we know the actual geometry
+	// of the buf window.
+	return h
+}
+
+// TODO: make sure splitID and tab are set before finishInitialize is called
+func (h *BufPane) finishInitialize() {
+	h.initialRelocate()
+	h.initialized = true
+	config.RunPluginFn("onBufPaneOpen", luar.New(ulua.L, h))
+}
+
+// Resize resizes the pane
+func (h *BufPane) Resize(width, height int) {
+	h.BWindow.Resize(width, height)
+	if !h.initialized {
+		h.finishInitialize()
+	}
 }
 
 // SetTab sets this pane's tab.
@@ -310,7 +338,7 @@ func (h *BufPane) OpenBuffer(b *buffer.Buffer) {
 	h.BWindow.SetBuffer(b)
 	h.Cursor = b.GetActiveCursor()
 	h.Resize(h.GetView().Width, h.GetView().Height)
-	h.Relocate()
+	h.initialRelocate()
 	// Reset mousePressed because we assume the mouse is not being
 	// pressed when the editor is opened
 	h.resetMouse()
@@ -318,6 +346,43 @@ func (h *BufPane) OpenBuffer(b *buffer.Buffer) {
 	// mode when editor is opened
 	h.isOverwriteMode = false
 	h.lastClickTime = time.Time{}
+}
+
+// GotoLoc moves the cursor to a new location and adjusts the view accordingly.
+// Use GotoLoc when the new location may be far away from the current location.
+func (h *BufPane) GotoLoc(loc buffer.Loc) {
+	sloc := h.SLocFromLoc(loc)
+	d := h.Diff(h.SLocFromLoc(h.Cursor.Loc), sloc)
+
+	h.Cursor.GotoLoc(loc)
+
+	// If the new location is far away from the previous one,
+	// ensure the cursor is at 25% of the window height
+	height := h.BufView().Height
+	if util.Abs(d) >= height {
+		v := h.GetView()
+		v.StartLine = h.Scroll(sloc, -height/4)
+		h.ScrollAdjust()
+		v.StartCol = 0
+	}
+	h.Relocate()
+}
+
+func (h *BufPane) initialRelocate() {
+	sloc := h.SLocFromLoc(h.Cursor.Loc)
+	height := h.BufView().Height
+
+	// If the initial cursor location is far away from the beginning
+	// of the buffer, ensure the cursor is at 25% of the window height
+	v := h.GetView()
+	if h.Diff(display.SLoc{0, 0}, sloc) < height {
+		v.StartLine = display.SLoc{0, 0}
+	} else {
+		v.StartLine = h.Scroll(sloc, -height/4)
+		h.ScrollAdjust()
+	}
+	v.StartCol = 0
+	h.Relocate()
 }
 
 // ID returns this pane's split id.

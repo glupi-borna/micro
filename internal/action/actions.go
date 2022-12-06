@@ -912,11 +912,10 @@ func (h *BufPane) Search(str string, useRegex bool, searchDown bool) error {
 		h.Cursor.SetSelectionEnd(match[1])
 		h.Cursor.OrigSelection[0] = h.Cursor.CurSelection[0]
 		h.Cursor.OrigSelection[1] = h.Cursor.CurSelection[1]
-		h.Cursor.GotoLoc(h.Cursor.CurSelection[1])
+		h.GotoLoc(h.Cursor.CurSelection[1])
 		h.Buf.LastSearch = str
 		h.Buf.LastSearchRegex = useRegex
 		h.Buf.HighlightSearch = h.Buf.Settings["hlsearch"].(bool)
-		h.Relocate()
 	} else {
 		h.Cursor.ResetSelection()
 	}
@@ -938,12 +937,11 @@ func (h *BufPane) find(useRegex bool) bool {
 				h.Cursor.SetSelectionEnd(match[1])
 				h.Cursor.OrigSelection[0] = h.Cursor.CurSelection[0]
 				h.Cursor.OrigSelection[1] = h.Cursor.CurSelection[1]
-				h.Cursor.GotoLoc(match[1])
+				h.GotoLoc(match[1])
 			} else {
-				h.Cursor.GotoLoc(h.searchOrig)
+				h.GotoLoc(h.searchOrig)
 				h.Cursor.ResetSelection()
 			}
-			h.Relocate()
 		}
 	}
 	findCallback := func(resp string, canceled bool) {
@@ -958,7 +956,7 @@ func (h *BufPane) find(useRegex bool) bool {
 				h.Cursor.SetSelectionEnd(match[1])
 				h.Cursor.OrigSelection[0] = h.Cursor.CurSelection[0]
 				h.Cursor.OrigSelection[1] = h.Cursor.CurSelection[1]
-				h.Cursor.GotoLoc(h.Cursor.CurSelection[1])
+				h.GotoLoc(h.Cursor.CurSelection[1])
 				h.Buf.LastSearch = resp
 				h.Buf.LastSearchRegex = useRegex
 				h.Buf.HighlightSearch = h.Buf.Settings["hlsearch"].(bool)
@@ -969,7 +967,6 @@ func (h *BufPane) find(useRegex bool) bool {
 		} else {
 			h.Cursor.ResetSelection()
 		}
-		h.Relocate()
 	}
 	pattern := string(h.Cursor.GetSelection())
 	if eventCallback != nil && pattern != "" {
@@ -1013,11 +1010,10 @@ func (h *BufPane) FindNext() bool {
 		h.Cursor.SetSelectionEnd(match[1])
 		h.Cursor.OrigSelection[0] = h.Cursor.CurSelection[0]
 		h.Cursor.OrigSelection[1] = h.Cursor.CurSelection[1]
-		h.Cursor.Loc = h.Cursor.CurSelection[1]
+		h.GotoLoc(h.Cursor.CurSelection[1])
 	} else {
 		h.Cursor.ResetSelection()
 	}
-	h.Relocate()
 	return true
 }
 
@@ -1040,11 +1036,10 @@ func (h *BufPane) FindPrevious() bool {
 		h.Cursor.SetSelectionEnd(match[1])
 		h.Cursor.OrigSelection[0] = h.Cursor.CurSelection[0]
 		h.Cursor.OrigSelection[1] = h.Cursor.CurSelection[1]
-		h.Cursor.Loc = h.Cursor.CurSelection[1]
+		h.GotoLoc(h.Cursor.CurSelection[1])
 	} else {
 		h.Cursor.ResetSelection()
 	}
-	h.Relocate()
 	return true
 }
 
