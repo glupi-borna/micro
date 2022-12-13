@@ -28,7 +28,7 @@ func init() {
 }
 
 func GetServer(l Language, dir string) *Server {
-	s, ok := activeServers[l.Command+"-"+dir]
+	s, ok := activeServers[l.Name+"-"+dir]
 	if ok && s.Active {
 		return s
 	}
@@ -100,17 +100,32 @@ type RPCDiag struct {
 }
 
 
+func env_to_strs(env map[string]string) []string {
+	var out []string
+	for key, val := range env {
+		out = append(out, key + "=" + val)
+	}
+	return out
+}
+
+
 func StartServer(l Language) (*Server, error) {
 	s := new(Server)
 
-	c := exec.Command(l.Command, l.Args...)
+	cwd, err := l.GetCwd()
+	if err != nil { return nil, err }
+	if len(cwd) == 0 { cwd, _ = os.Getwd() }
+
+	cmd, err := l.GetCmd(cwd)
+	if err != nil { return nil, err }
+	c := exec.Command(cmd.tokens[0], cmd.tokens[1:]...)
 
 	var env = os.Environ()
-	env = append(env, l.Env...)
-	c.Env = env
-	if len(l.Cwd) > 0 {
-		c.Dir = l.Cwd
-	}
+	add_env, err := l.GetEnv()
+	if err != nil { return nil, err }
+
+	c.Env = append(env, env_to_strs(add_env)...)
+	c.Dir = cwd
 
 	c.Stderr = log.Writer()
 
@@ -157,10 +172,10 @@ func (s *Server) Initialize(directory string) {
 			},
 			TextDocument: &lsp.TextDocumentClientCapabilities{
 				Formatting: &lsp.TextDocumentClientCapabilitiesFormatting{
-					DynamicRegistration: false,
+					DynamicRegistration: true,
 				},
 				Completion: &lsp.CompletionTextDocumentClientCapabilities{
-					DynamicRegistration: false,
+					DynamicRegistration: true,
 					CompletionItem: &lsp.TextDocumentClientCapabilitiesCompletionItem{
 						SnippetSupport:          false,
 						CommitCharactersSupport: false,
@@ -172,19 +187,19 @@ func (s *Server) Initialize(directory string) {
 					ContextSupport: false,
 				},
 				Rename: &lsp.RenameClientCapabilities{
-					DynamicRegistration: false,
+					DynamicRegistration: true,
 					PrepareSupport: true,
 					HonorsChangeAnnotations: false,
 				},
 				Hover: &lsp.TextDocumentClientCapabilitiesHover{
-					DynamicRegistration: false,
+					DynamicRegistration: true,
 					ContentFormat:       []lsp.MarkupKind{lsp.PlainText},
 				},
 			},
 		},
 	}
 
-	activeServers[s.language.Command+"-"+directory] = s
+	activeServers[s.language.Name+"-"+directory] = s
 	s.Active = true
 	s.root = directory
 
@@ -254,6 +269,8 @@ func (s *Server) receive() {
 		switch r.Method {
 		case lsp.MethodWindowLogMessage:
 			// TODO
+		case lsp.MethodClientRegisterCapability:
+		case lsp.MethodClientUnregisterCapability:
 		case lsp.MethodTextDocumentPublishDiagnostics:
 			var diag RPCDiag
 			err = json.Unmarshal(resp, &diag)

@@ -987,11 +987,13 @@ func splitWidth(text string, width int) []string {
 }
 
 func WrapString(text string, width int) []string {
+	var out []string
+	if width <= 0 { return out }
+
 	ws := string(util.GetLeadingWhitespace([]byte(text)))
 	indent := len(ws)
 	words := strings.Fields(text)
 
-	var out []string
 	curlen := indent
 	curstr := ""
 
@@ -1048,8 +1050,19 @@ func (w *BufWindow) displayTooltip() {
 	}
 	width+=4
 
-	width = util.Min(width, w.bufWidth - w.Buf.GetActiveCursor().X - 1)
-	width = util.Max(width, 1)
+	real_width := width
+	xoff := 0
+
+	width = util.Min(width, w.bufWidth - w.tooltipBox.X - 1)
+	width = util.Max(width, 2)
+
+	if real_width > width {
+		xoff = width-real_width
+		if xoff < -w.tooltipBox.X {
+			xoff = -w.tooltipBox.X
+		}
+		width -= xoff
+	}
 
 	defstyle := config.DefStyle
 	if style, ok:= config.Colorscheme["tooltip"]; ok {
@@ -1066,7 +1079,7 @@ func (w *BufWindow) displayTooltip() {
 				s = s[size:]
 			}
 			st := defstyle
-			screen.SetContent(w.tooltipBox.X+x+j, w.tooltipBox.Y+y, r, combc, st)
+			screen.SetContent(w.tooltipBox.X+x+j+xoff, w.tooltipBox.Y+y, r, combc, st)
 		}
 	}
 

@@ -10,7 +10,6 @@ import (
 	"io/ioutil"
 	"os"
 	"path"
-	gopath "path"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -18,6 +17,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"log"
 
 	dmp "github.com/sergi/go-diff/diffmatchpatch"
 	"github.com/zyedidia/micro/v2/internal/config"
@@ -480,23 +480,29 @@ func NewBuffer(r io.Reader, size int64, path string, startcursor Loc, btype BufT
 func (b *Buffer) lspInit() {
 	ft := lsp.Filetype(b.Settings["filetype"].(string))
 	l, ok := lsp.GetLanguage(ft)
-	if ok && l.Installed() {
-		b.Server = lsp.GetServer(l, gopath.Dir(b.AbsPath))
-		if b.Server == nil {
-			var err error
-			b.Server, err = lsp.StartServer(l)
-			if err == nil {
-				d, _ := os.Getwd()
-				b.Server.Initialize(d)
-			}
+	if (!ok) { log.Println("No server found for language ", ft); return; }
+	if (!l.Installed()) { log.Println("Language server ", l.Name, " is not installed!"); return }
+
+	wd, err := os.Getwd()
+	if (err != nil) { return; }
+
+	b.Server = lsp.GetServer(l, wd)
+	if b.Server == nil {
+		b.Server, err = lsp.StartServer(l)
+		if err == nil {
+			d, _ := os.Getwd()
+			b.Server.Initialize(d)
+		} else {
+			log.Println(b.Path, "failed to start server: ", err)
 		}
-		if b.HasLSP() {
-			bytes := b.Bytes()
-			if len(bytes) == 0 {
-				bytes = []byte{'\n'}
-			}
-			b.Server.DidOpen(b.AbsPath, ft, string(bytes), b.version)
+	}
+
+	if b.HasLSP() {
+		bytes := b.Bytes()
+		if len(bytes) == 0 {
+			bytes = []byte{'\n'}
 		}
+		b.Server.DidOpen(b.AbsPath, ft, string(bytes), b.version)
 	}
 }
 
