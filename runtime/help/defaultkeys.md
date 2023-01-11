@@ -39,7 +39,7 @@ can change it!
 ### Tabs
 
 | Key     | Description of function   |
-|-------- |-------------------------  |
+|-------- |-------------------------- |
 | Ctrl-t  | Open a new tab            |
 | Alt-,   | Previous tab              |
 | Alt-.   | Next tab                  |
@@ -51,6 +51,10 @@ can change it!
 | Ctrl-f    | Find (opens prompt)                       |
 | Ctrl-n    | Find next instance of current search      |
 | Ctrl-p    | Find previous instance of current search  |
+
+Note: Ctrl-n and Ctrl-p should be used from the main buffer, not from inside
+the search prompt. After Ctrl-f, press enter to complete the search and then
+you can use Ctrl-n and Ctrl-p to cycle through matches.
 
 ### File Operations
 

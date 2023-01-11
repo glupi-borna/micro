@@ -89,8 +89,8 @@ Here are the available options:
     binary.
 
 	The colorscheme can be selected from all the files in the 
-	~/.config/micro/colorschemes/ directory. Micro comes by default with three
-	colorschemes:
+	~/.config/micro/colorschemes/ directory. Micro comes by default with
+	three colorschemes:
 
 	You can read more about micro's colorschemes in the `colors` help topic
 	(`help colors`).
@@ -159,12 +159,30 @@ Here are the available options:
 	default value: `unknown`. This will be automatically overridden depending
     on the file you open.
 
+* `hidecursor`: don't display the cursor. This option is useful mainly for
+   plugins. This option is local only.
+
+	default value: `false`
+
 * `hlsearch`: highlight all instances of the searched text after a successful
-   search. This highlighting can be turned off via `UnhighlightSearch` action
-   (triggered by Esc key by default) or toggled on/off via `ToggleHighlightSearch`
-   action. Note that these actions don't change `hlsearch` setting.
-   As long as `hlsearch` is set to true, after the next search the highlighting
-   is turned on again.
+   search. This highlighting can be temporarily turned off via the
+   `UnhighlightSearch` action (triggered by the Esc key by default) or toggled
+   on/off via the `ToggleHighlightSearch` action. Note that these actions don't
+   change the `hlsearch` setting. As long as `hlsearch` is set to true, the next
+   search will have the highlighting turned on again.
+
+	default value: `false`
+
+* `hltaberrors`: highlight tabs when spaces are expected, and spaces when tabs
+   are expected. More precisely: if `tabstospaces` option is on, highlight
+   all tab characters; if `tabstospaces` is off, highlight space characters
+   in the initial indent part of the line.
+
+	default value: `false`
+
+* `hltrailingws`: highlight trailing whitespaces at ends of lines. Note that
+   it doesn't highlight newly added trailing whitespaces that naturally occur
+   while typing text. It highlights only nasty forgotten trailing whitespaces.
 
 	default value: `false`
 
@@ -275,9 +293,9 @@ Here are the available options:
 
 	default value: `true`
 
-* `relativeruler`: make line numbers display relatively. If set to true, all lines except
-	for the line that the cursor is located will display the distance from the 
-	cursor's line. 
+* `relativeruler`: make line numbers display relatively. If set to true, all
+   lines except for the line that the cursor is located will display the distance
+   from the cursor's line. 
 
 	default value: `false` 
 
@@ -333,7 +351,8 @@ Here are the available options:
 
 * `statusformatl`: format string definition for the left-justified part of the
    statusline. Special directives should be placed inside `$()`. Special
-   directives include: `filename`, `modified`, `line`, `col`, `lines`, `percentage`, `opt`, `bind`.
+   directives include: `filename`, `modified`, `line`, `col`, `lines`,
+   `percentage`, `opt`, `bind`.
    The `opt` and `bind` directives take either an option or an action afterward
    and fill in the value of the option or the key bound to the action.
 
@@ -364,6 +383,15 @@ Here are the available options:
    `tabstospaces` is on.
 
 	default value: `false`
+
+* `tabhighlight`: inverts the tab characters' (filename, save indicator, etc)
+  colors with respect to the tab bar.
+
+	default value: false
+
+* `tabreverse`: reverses the tab bar colors when active.
+
+	default value: true
 
 * `tabsize`: the size in spaces that a tab character should be displayed with.
 
@@ -491,6 +519,8 @@ so that you can see what the formatting should look like.
     "sucmd": "sudo",
     "syntax": true,
     "tabmovement": false,
+    "tabhighlight": true,
+    "tabreverse": false,
     "tabsize": 4,
     "tabstospaces": false,
     "useprimary": true,

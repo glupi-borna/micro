@@ -8,7 +8,7 @@ import (
 	"runtime"
 	"strings"
 	"time"
-	"strconv"
+
 
 	shellquote "github.com/kballard/go-shellquote"
 	"github.com/zyedidia/micro/v2/internal/buffer"
@@ -18,9 +18,7 @@ import (
 	"github.com/zyedidia/micro/v2/internal/screen"
 	"github.com/zyedidia/micro/v2/internal/shell"
 	"github.com/zyedidia/micro/v2/internal/util"
-	"github.com/zyedidia/micro/v2/internal/lsp"
 	"github.com/zyedidia/tcell/v2"
-	"go.lsp.dev/protocol"
 )
 
 // ScrollUp is not an action
@@ -53,6 +51,10 @@ func (h *BufPane) ScrollAdjust() {
 func (h *BufPane) MousePress(e *tcell.EventMouse) bool {
 	b := h.Buf
 	mx, my := e.Position()
+	// ignore click on the status line
+	if my >= h.BufView().Y+h.BufView().Height {
+		return false
+	}
 
 	gutterOffset := 1
 	if b.Settings["diffgutter"].(bool) {
@@ -66,6 +68,7 @@ func (h *BufPane) MousePress(e *tcell.EventMouse) bool {
 
 	mouseLoc := h.LocFromVisual(buffer.Loc{mx, my})
 	h.Cursor.Loc = mouseLoc
+
 	if h.mouseReleased {
 		b.HasSuggestions = false
 		b.HasTooltip = false
@@ -91,55 +94,86 @@ func (h *BufPane) MousePress(e *tcell.EventMouse) bool {
 
 			return true
 		}
-		if b.NumCursors() > 1 {
-			b.ClearCursors()
-			h.Relocate()
-			h.Cursor = h.Buf.GetActiveCursor()
-			h.Cursor.Loc = mouseLoc
-		}
-		if time.Since(h.lastClickTime)/time.Millisecond < config.DoubleClickThreshold && (mouseLoc.X == h.lastLoc.X && mouseLoc.Y == h.lastLoc.Y) {
-			if h.doubleClick {
-				// Triple click
-				h.lastClickTime = time.Now()
+	}
 
-				h.tripleClick = true
-				h.doubleClick = false
-
-				h.Cursor.SelectLine()
-				h.Cursor.CopySelection(clipboard.PrimaryReg)
-			} else {
-				// Double click
-				h.lastClickTime = time.Now()
-
-				h.doubleClick = true
-				h.tripleClick = false
-
-				h.Cursor.SelectWord()
-				h.Cursor.CopySelection(clipboard.PrimaryReg)
-			}
-		} else {
-			h.doubleClick = false
-			h.tripleClick = false
+	if b.NumCursors() > 1 {
+		b.ClearCursors()
+		h.Relocate()
+		h.Cursor = h.Buf.GetActiveCursor()
+		h.Cursor.Loc = mouseLoc
+	}
+	if time.Since(h.lastClickTime)/time.Millisecond < config.DoubleClickThreshold && (mouseLoc.X == h.lastLoc.X && mouseLoc.Y == h.lastLoc.Y) {
+		if h.doubleClick {
+			// Triple click
 			h.lastClickTime = time.Now()
 
-			h.Cursor.OrigSelection[0] = h.Cursor.Loc
-			h.Cursor.CurSelection[0] = h.Cursor.Loc
-			h.Cursor.CurSelection[1] = h.Cursor.Loc
-		}
-		h.mouseReleased = false
-	} else if !h.mouseReleased {
-		if h.tripleClick {
-			h.Cursor.AddLineToSelection()
-		} else if h.doubleClick {
-			h.Cursor.AddWordToSelection()
+			h.tripleClick = true
+			h.doubleClick = false
+
+			h.Cursor.SelectLine()
+			h.Cursor.CopySelection(clipboard.PrimaryReg)
 		} else {
-			h.Cursor.SelectTo(h.Cursor.Loc)
+			// Double click
+			h.lastClickTime = time.Now()
+
+			h.doubleClick = true
+			h.tripleClick = false
+
+			h.Cursor.SelectWord()
+			h.Cursor.CopySelection(clipboard.PrimaryReg)
 		}
+	} else {
+		h.doubleClick = false
+		h.tripleClick = false
+		h.lastClickTime = time.Now()
+
+		h.Cursor.OrigSelection[0] = h.Cursor.Loc
+		h.Cursor.CurSelection[0] = h.Cursor.Loc
+		h.Cursor.CurSelection[1] = h.Cursor.Loc
 	}
 
 	h.Cursor.StoreVisualX()
 	h.lastLoc = mouseLoc
 	h.Relocate()
+	return true
+}
+
+func (h *BufPane) MouseDrag(e *tcell.EventMouse) bool {
+	mx, my := e.Position()
+	// ignore drag on the status line
+	if my >= h.BufView().Y+h.BufView().Height {
+		return false
+	}
+	h.Cursor.Loc = h.LocFromVisual(buffer.Loc{mx, my})
+
+	if h.tripleClick {
+		h.Cursor.AddLineToSelection()
+	} else if h.doubleClick {
+		h.Cursor.AddWordToSelection()
+	} else {
+		h.Cursor.SetSelectionEnd(h.Cursor.Loc)
+	}
+
+	h.Cursor.StoreVisualX()
+	h.Relocate()
+	return true
+}
+
+func (h *BufPane) MouseRelease(e *tcell.EventMouse) bool {
+	// We could finish the selection based on the release location as in the
+	// commented out code below, to allow text selections even in a terminal
+	// that doesn't support mouse motion events. But when the mouse click is
+	// within the scroll margin, that would cause a scroll and selection
+	// even for a simple mouse click, which is not good.
+	// if !h.doubleClick && !h.tripleClick {
+	// 	mx, my := e.Position()
+	// 	h.Cursor.Loc = h.LocFromVisual(buffer.Loc{mx, my})
+	// 	h.Cursor.SetSelectionEnd(h.Cursor.Loc)
+	// }
+
+	if h.Cursor.HasSelection() {
+		h.Cursor.CopySelection(clipboard.PrimaryReg)
+	}
 	return true
 }
 
@@ -744,13 +778,6 @@ func (h *BufPane) Autocomplete() bool {
 		return false
 	}
 
-	// if there is an existing completion, always cycle it
-	if b.HasSuggestions {
-		h.cycleAutocomplete(true)
-		return true
-	}
-
-	// don't start a new completion unless the correct conditions are met
 	if h.Cursor.X == 0 {
 		return false
 	}
@@ -760,14 +787,12 @@ func (h *BufPane) Autocomplete() bool {
 		// don't autocomplete if cursor is on alpha numeric character (middle of a word)
 		return false
 	}
-	ret := true
-	if !b.Autocomplete(buffer.LSPComplete) {
-		ret = b.Autocomplete(buffer.BufferComplete)
+
+	if b.HasSuggestions {
+		b.CycleAutocomplete(true)
+		return true
 	}
-	if ret {
-		h.displayCompletionDoc()
-	}
-	return true
+	return b.Autocomplete(buffer.BufferComplete)
 }
 
 // CycleAutocompleteBack cycles back in the autocomplete suggestion list
@@ -777,22 +802,10 @@ func (h *BufPane) CycleAutocompleteBack() bool {
 	}
 
 	if h.Buf.HasSuggestions {
-		h.cycleAutocomplete(false)
+		h.Buf.CycleAutocomplete(false)
 		return true
 	}
 	return false
-}
-
-func (h *BufPane) cycleAutocomplete(forward bool) {
-	h.Buf.CycleAutocomplete(forward)
-	h.displayCompletionDoc()
-}
-
-func (h *BufPane) displayCompletionDoc() {
-	c := h.Buf.CurCompletion
-	if c >= 0 && c < len(h.Buf.Completions) {
-		InfoBar.Message(h.Buf.Completions[c].Doc)
-	}
 }
 
 // InsertTab inserts a tab or spaces
@@ -937,11 +950,10 @@ func (h *BufPane) Search(str string, useRegex bool, searchDown bool) error {
 		h.Cursor.SetSelectionEnd(match[1])
 		h.Cursor.OrigSelection[0] = h.Cursor.CurSelection[0]
 		h.Cursor.OrigSelection[1] = h.Cursor.CurSelection[1]
-		h.Cursor.GotoLoc(h.Cursor.CurSelection[1])
+		h.GotoLoc(h.Cursor.CurSelection[1])
 		h.Buf.LastSearch = str
 		h.Buf.LastSearchRegex = useRegex
 		h.Buf.HighlightSearch = h.Buf.Settings["hlsearch"].(bool)
-		h.Relocate()
 	} else {
 		h.Cursor.ResetSelection()
 	}
@@ -963,12 +975,11 @@ func (h *BufPane) find(useRegex bool) bool {
 				h.Cursor.SetSelectionEnd(match[1])
 				h.Cursor.OrigSelection[0] = h.Cursor.CurSelection[0]
 				h.Cursor.OrigSelection[1] = h.Cursor.CurSelection[1]
-				h.Cursor.GotoLoc(match[1])
+				h.GotoLoc(match[1])
 			} else {
-				h.Cursor.GotoLoc(h.searchOrig)
+				h.GotoLoc(h.searchOrig)
 				h.Cursor.ResetSelection()
 			}
-			h.Relocate()
 		}
 	}
 	findCallback := func(resp string, canceled bool) {
@@ -983,7 +994,7 @@ func (h *BufPane) find(useRegex bool) bool {
 				h.Cursor.SetSelectionEnd(match[1])
 				h.Cursor.OrigSelection[0] = h.Cursor.CurSelection[0]
 				h.Cursor.OrigSelection[1] = h.Cursor.CurSelection[1]
-				h.Cursor.GotoLoc(h.Cursor.CurSelection[1])
+				h.GotoLoc(h.Cursor.CurSelection[1])
 				h.Buf.LastSearch = resp
 				h.Buf.LastSearchRegex = useRegex
 				h.Buf.HighlightSearch = h.Buf.Settings["hlsearch"].(bool)
@@ -994,7 +1005,6 @@ func (h *BufPane) find(useRegex bool) bool {
 		} else {
 			h.Cursor.ResetSelection()
 		}
-		h.Relocate()
 	}
 	pattern := string(h.Cursor.GetSelection())
 	if eventCallback != nil && pattern != "" {
@@ -1038,11 +1048,10 @@ func (h *BufPane) FindNext() bool {
 		h.Cursor.SetSelectionEnd(match[1])
 		h.Cursor.OrigSelection[0] = h.Cursor.CurSelection[0]
 		h.Cursor.OrigSelection[1] = h.Cursor.CurSelection[1]
-		h.Cursor.Loc = h.Cursor.CurSelection[1]
+		h.GotoLoc(h.Cursor.CurSelection[1])
 	} else {
 		h.Cursor.ResetSelection()
 	}
-	h.Relocate()
 	return true
 }
 
@@ -1065,11 +1074,10 @@ func (h *BufPane) FindPrevious() bool {
 		h.Cursor.SetSelectionEnd(match[1])
 		h.Cursor.OrigSelection[0] = h.Cursor.CurSelection[0]
 		h.Cursor.OrigSelection[1] = h.Cursor.CurSelection[1]
-		h.Cursor.Loc = h.Cursor.CurSelection[1]
+		h.GotoLoc(h.Cursor.CurSelection[1])
 	} else {
 		h.Cursor.ResetSelection()
 	}
-	h.Relocate()
 	return true
 }
 
@@ -1105,12 +1113,14 @@ func (h *BufPane) CopyLine() bool {
 	if h.Cursor.HasSelection() {
 		return false
 	}
+	origLoc := h.Cursor.Loc
 	h.Cursor.SelectLine()
 	h.Cursor.CopySelection(clipboard.ClipboardReg)
 	h.freshClip = true
 	InfoBar.Message("Copied line")
 
 	h.Cursor.Deselect(true)
+	h.Cursor.Loc = origLoc
 	h.Relocate()
 	return true
 }
@@ -1326,15 +1336,12 @@ func (h *BufPane) JumpToMatchingBrace() bool {
 				} else {
 					h.Cursor.GotoLoc(matchingBrace.Move(1, h.Buf))
 				}
-				break
-			} else {
-				return false
+				h.Relocate()
+				return true
 			}
 		}
 	}
-
-	h.Relocate()
-	return true
+	return false
 }
 
 // SelectAll selects the entire buffer
@@ -1858,6 +1865,10 @@ func (h *BufPane) SpawnMultiCursorSelect() bool {
 func (h *BufPane) MouseMultiCursor(e *tcell.EventMouse) bool {
 	b := h.Buf
 	mx, my := e.Position()
+	// ignore click on the status line
+	if my >= h.BufView().Y+h.BufView().Height {
+		return false
+	}
 	mouseLoc := h.LocFromVisual(buffer.Loc{X: mx, Y: my})
 	c := buffer.NewCursor(b, mouseLoc)
 	b.AddCursor(c)
@@ -1916,145 +1927,6 @@ func (h *BufPane) RemoveAllMultiCursors() bool {
 	h.Buf.ClearCursors()
 	h.multiWord = false
 	h.Relocate()
-	return true
-}
-
-func (h *BufPane) Tooltip() bool {
-	tip, err := h.Buf.LSPHover()
-	if err != nil {
-		InfoBar.Error(err)
-		return false
-	}
-
-	if len(tip) > 0 {
-		h.Buf.TooltipLines = tip
-		h.Buf.HasTooltip = true
-		h.Buf.HasSuggestions = false
-	} else {
-		h.Buf.TooltipLines = nil
-		h.Buf.HasTooltip = false
-		h.Buf.HasSuggestions = false
-	}
-
-	return true
-}
-
-func (h *BufPane) Rename() bool {
-	b := h.Buf
-	rename_symbol, server, err := b.GetRenameSymbol()
-
-	if err != nil {
-		InfoBar.Error(err)
-		return false
-	}
-
-	InfoBar.Prompt(
-		"Rename: " + rename_symbol + " -> ", rename_symbol, "Rename", nil,
-		func(new_name string, canceled bool) {
-			if canceled { return }
-
-			new_name = strings.TrimSpace(new_name)
-			if new_name == "" {
-				InfoBar.Error("Cannot rename with empty string!")
-				return
-			}
-
-			if server == nil {
-				h.ReplaceAllCmd([]string{ rename_symbol, new_name, "-l" })
-			} else {
-				res, err := server.RenameSymbol(b.AbsPath, b.GetActiveCursor().ToPos(), new_name)
-				if err != nil {
-					InfoBar.Error(err)
-					return
-				}
-				if (len(res.Changes) + len(res.DocumentChanges)) == 0 {
-					InfoBar.Error("Cannot rename '" + rename_symbol + "'")
-					return
-				}
-				h.ApplyWorkspaceEdits(res)
-			}
-		},
-	)
-
-	return true
-}
-
-func FindBuffer(absPath string) *buffer.Buffer {
-	for _, b := range buffer.OpenBuffers {
-		if b.AbsPath == absPath {
-			return b
-		}
-	}
-	return nil
-}
-
-func (h *BufPane) ApplyWorkspaceEdits(edit protocol.WorkspaceEdit) {
-	for uri, edits := range edit.Changes {
-		b := FindBuffer(uri.Filename())
-		if b == nil { continue }
-		b.ApplyEdits(edits)
-	}
-
-	width, height := screen.Screen.Size()
-	iOffset := config.GetInfoBarOffset()
-
-	for _, change := range edit.DocumentChanges {
-		fn := change.TextDocument.URI.Filename()
-		b := FindBuffer(fn)
-		if b == nil {
-			var err error
-			b, err = buffer.NewBufferFromFile(fn, buffer.BTDefault)
-			if err != nil {
-				InfoBar.Error(err)
-				continue
-			}
-
-			new_tab := NewTabFromBuffer(0, 0, width, height-1-iOffset, b)
-			Tabs.AddTab(new_tab)
-		}
-		b.ApplyEdits(change.Edits)
-	}
-}
-
-// AutoFormat automatically formats the document using LSP
-func (h *BufPane) AutoFormat() bool {
-	if !h.Buf.HasLSP() {
-		return false
-	}
-
-	var err error
-	var edits []protocol.TextEdit
-
-	fmtopt := protocol.FormattingOptions{
-		InsertSpaces: h.Buf.Settings["tabstospaces"].(bool),
-		TabSize:      h.Buf.Settings["tabsize"].(uint32),
-	}
-
-	if h.Cursor.HasSelection() {
-		prange := protocol.Range{
-			Start: h.Cursor.CurSelection[0].ToPos(),
-			End:   h.Cursor.CurSelection[1].ToPos(),
-		}
-
-		edits = util.Fold(util.ChanMapAll(h.Buf.Servers, func (s *lsp.Server) ([]protocol.TextEdit, bool) {
-			res, e := s.DocumentRangeFormat(h.Buf.AbsPath, prange, fmtopt)
-			if e == nil { return res, true }
-			return nil, false
-		})...)
-	} else {
-		edits = util.Fold(util.ChanMapAll(h.Buf.Servers, func (s *lsp.Server) ([]protocol.TextEdit, bool) {
-			res, e := s.DocumentFormat(h.Buf.AbsPath, fmtopt)
-			if e == nil { return res, true }
-			return nil, false
-		})...)
-	}
-
-	if err != nil {
-		InfoBar.Error(err)
-		return false
-	}
-
-	h.Buf.ApplyEdits(edits)
 	return true
 }
 

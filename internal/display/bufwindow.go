@@ -57,8 +57,10 @@ func (w *BufWindow) SetBuffer(b *buffer.Buffer) {
 			} else {
 				w.StartLine.Row = 0
 			}
-			w.Relocate()
+		}
 
+		if option == "softwrap" || option == "wordwrap" {
+			w.Relocate()
 			for _, c := range w.Buf.GetCursors() {
 				c.LastVisualX = c.GetVisualX()
 			}
@@ -85,12 +87,6 @@ func (w *BufWindow) Resize(width, height int) {
 	w.updateDisplayInfo()
 
 	w.Relocate()
-
-	if w.Buf.Settings["softwrap"].(bool) {
-		for _, c := range w.Buf.GetCursors() {
-			c.LastVisualX = c.GetVisualX()
-		}
-	}
 }
 
 // SetActive marks the window as active.
@@ -151,9 +147,17 @@ func (w *BufWindow) updateDisplayInfo() {
 		w.gutterOffset += w.maxLineNumLength + 1
 	}
 
+	prevBufWidth := w.bufWidth
+
 	w.bufWidth = w.Width - w.gutterOffset
 	if w.Buf.Settings["scrollbar"].(bool) && w.Buf.LinesNum() > w.Height {
 		w.bufWidth--
+	}
+
+	if w.bufWidth != prevBufWidth && w.Buf.Settings["softwrap"].(bool) {
+		for _, c := range w.Buf.GetCursors() {
+			c.LastVisualX = c.GetVisualX()
+		}
 	}
 }
 
@@ -220,7 +224,7 @@ func (w *BufWindow) Relocate() bool {
 		w.StartLine = c
 		ret = true
 	}
-	if c.GreaterThan(w.Scroll(w.StartLine, height-1-scrollmargin)) && c.LessThan(w.Scroll(bEnd, -scrollmargin+1)) {
+	if c.GreaterThan(w.Scroll(w.StartLine, height-1-scrollmargin)) && c.LessEqual(w.Scroll(bEnd, -scrollmargin)) {
 		w.StartLine = w.Scroll(c, -height+1+scrollmargin)
 		ret = true
 	} else if c.GreaterThan(w.Scroll(bEnd, -scrollmargin)) && c.GreaterThan(w.Scroll(w.StartLine, height-1)) {
@@ -575,6 +579,14 @@ func (w *BufWindow) displayBuffer() {
 			vloc.X = w.gutterOffset
 		}
 
+		w.gutterOffset = vloc.X
+
+		bline := b.LineBytes(bloc.Y)
+		blineLen := util.CharacterCount(bline)
+
+		leadingwsEnd := len(util.GetLeadingWhitespace(bline))
+		trailingwsStart := blineLen - util.CharacterCount(util.GetTrailingWhitespace(bline))
+
 		line, nColsBeforeStart, bslice, startStyle := w.getStartInfo(w.StartCol, bloc.Y)
 		if startStyle != nil {
 			curStyle = *startStyle
@@ -597,6 +609,37 @@ func (w *BufWindow) displayBuffer() {
 					// syntax or hlsearch highlighting with non-default background takes precedence
 					// over cursor-line and color-column
 					dontOverrideBackground := origBg != defBg
+
+					if b.Settings["hltaberrors"].(bool) {
+						if s, ok := config.Colorscheme["tab-error"]; ok {
+							isTab := (r == '\t') || (r == ' ' && !showcursor)
+							if (b.Settings["tabstospaces"].(bool) && isTab) ||
+								(!b.Settings["tabstospaces"].(bool) && bloc.X < leadingwsEnd && r == ' ' && !isTab) {
+								fg, _, _ := s.Decompose()
+								style = style.Background(fg)
+								dontOverrideBackground = true
+							}
+						}
+					}
+
+					if b.Settings["hltrailingws"].(bool) {
+						if s, ok := config.Colorscheme["trailingws"]; ok {
+							if bloc.X >= trailingwsStart && bloc.X < blineLen {
+								hl := true
+								for _, c := range cursors {
+									if c.NewTrailingWsY == bloc.Y {
+										hl = false
+										break
+									}
+								}
+								if hl {
+									fg, _, _ := s.Decompose()
+									style = style.Background(fg)
+									dontOverrideBackground = true
+								}
+							}
+						}
+					}
 
 					for _, c := range cursors {
 						if c.HasSelection() &&
@@ -695,7 +738,7 @@ func (w *BufWindow) displayBuffer() {
 					}
 				}
 
-				if showcursor {
+				if showcursor && !b.Settings["hidecursor"].(bool) {
 					for _, c := range cursors {
 						if c.X == bloc.X && c.Y == bloc.Y && !c.HasSelection() {
 							w.showCursor(w.X+vloc.X, w.Y+vloc.Y, c.Num == 0)

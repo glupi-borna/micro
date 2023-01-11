@@ -290,7 +290,10 @@ var defaultCommonSettings = map[string]interface{}{
 	"fastdirty":      false,
 	"fileformat":     "unix",
 	"filetype":       "unknown",
+	"hidecursor":     false,
 	"hlsearch":       false,
+	"hltaberrors":    false,
+	"hltrailingws":   false,
 	"incsearch":      true,
 	"ignorecase":     true,
 	"indentchar":     " ",
@@ -359,16 +362,19 @@ var DefaultGlobalOnlySettings = map[string]interface{}{
 	"mouse":          true,
 	"parsecursor":    false,
 	"paste":          false,
-	"savehistory":    true,
-	"sucmd":          "sudo",
 	"pluginchannels": []string{"https://raw.githubusercontent.com/micro-editor/plugin-channel/master/channel.json"},
 	"pluginrepos":    []string{},
+	"savehistory":    true,
+	"sucmd":          "sudo",
+	"tabhighlight":   false,
+	"tabreverse":     true,
 	"xterm":          false,
 }
 
 // a list of settings that should never be globally modified
 var LocalSettings = []string{
 	"filetype",
+	"hidecursor",
 	"readonly",
 }
 
