@@ -22,17 +22,14 @@ import (
 var ErrManualInstall = errors.New("Requires manual installation")
 var ErrUnknownInstall = errors.New("Unknown installation method")
 
-type ConfigStatic struct {
-	Languages map[string]LanguageStatic `yaml:"language"`
-}
-
 type Config struct {
-	Languages map[string]Language
+	LSPConfigs []LSPConfig
 }
 
-type LanguageStatic struct {
+type LSPConfigStatic struct {
 	Name        string
 	Command     string 				`yaml:"command"`
+	Languages   []string            `yaml:"languages"`
 	Args        []string            `yaml:"args"`
 	IsInstalled []string			`yaml:"is_installed"`
 	Install     [][]string			`yaml:"install"`
@@ -40,8 +37,10 @@ type LanguageStatic struct {
 	Cwd         string 				`yaml:"cwd"`
 }
 
-type Language struct {
+type LSPConfig struct {
 	Name		string
+	Languages   []string
+	IsValid     Runnable
 	Command		Runnable
 	IsInstalled	Runnable
 	Install		Runnable
@@ -50,14 +49,14 @@ type Language struct {
 }
 
 type Runnable interface {
-	Run(Language, ...any) (any, error)
+	Run(LSPConfig, ...any) (any, error)
 }
 
 type Command struct {
 	tokens []string
 }
 
-func (cmd *Command) Run(l Language, args ...any) (any, error) {
+func (cmd *Command) Run(l LSPConfig, args ...any) (any, error) {
 	log.Println(strings.Join(cmd.tokens, " ")+"\n")
 	var cmdr *exec.Cmd
 	if len(cmd.tokens) > 1 {
@@ -83,7 +82,7 @@ func MakeCommands(arr [][]string) *Commands {
 	return &Commands{cmds}
 }
 
-func (cmds *Commands) Run(l Language, args ...any) (any, error) {
+func (cmds *Commands) Run(l LSPConfig, args ...any) (any, error) {
 	var vals []any
 	for _, cmd := range cmds.cmds {
 		val, err := cmd.Run(l)
@@ -105,7 +104,7 @@ func lua_args(args ...any) []lua.LValue {
 	return out
 }
 
-func (lf *LUAFn) Run(l Language, args ...any) (any, error) {
+func (lf *LUAFn) Run(l LSPConfig, args ...any) (any, error) {
 	var largs []lua.LValue
 	largs = append(largs, luar.New(ulua.L, l))
 	largs = append(largs, lua_args(args)...)
@@ -116,7 +115,7 @@ type Fn struct {
 	fn func (...any) []any
 }
 
-func (lf *Fn) Run(l Language, args ...any) (any, error) {
+func (lf *Fn) Run(l LSPConfig, args ...any) (any, error) {
 	var fnargs []any
 	fnargs = append(fnargs, l)
 	fnargs = append(fnargs, args...)
@@ -127,7 +126,7 @@ type Env struct {
 	dict map[string]string
 }
 
-func (env *Env) Run(l Language, args ...any) (any, error) {
+func (env *Env) Run(l LSPConfig, args ...any) (any, error) {
 	return env.dict, nil
 }
 
@@ -135,15 +134,15 @@ type Str struct {
 	str string
 }
 
-func (str *Str) Run(l Language, args ...any) (any, error) {
+func (str *Str) Run(l LSPConfig, args ...any) (any, error) {
 	return str.str, nil
 }
 
 type NoOp struct {}
-func (*NoOp) Run(l Language, args ...any) (any, error) { return nil, ErrManualInstall }
+func (*NoOp) Run(l LSPConfig, args ...any) (any, error) { return nil, ErrManualInstall }
 
 type ResolutionContext struct {
-	l Language
+	l LSPConfig
 	from any
 	errname string
 }
@@ -162,13 +161,23 @@ func (ctx ResolutionContext) Error(msg string) error {
 
 var conf *Config
 
-func GetLanguage(lang string) (Language, bool) {
-	if conf != nil {
-		log.Println("Getting server for ", lang)
-		l, ok := conf.Languages[lang]
-		return l, ok
+func (l *LSPConfig)Supports(filetype string) bool {
+	for _, supported := range l.Languages {
+		if supported == filetype { return true }
 	}
-	return Language{}, false
+	return false
+}
+
+func GetLanguages(filetype string) []LSPConfig {
+	if conf != nil {
+		var out []LSPConfig
+		for _, l := range conf.LSPConfigs {
+			if !l.Supports(filetype) { continue }
+			out = append(out, l)
+		}
+		return out
+	}
+	return nil
 }
 
 func Init() error {
@@ -188,9 +197,6 @@ func Init() error {
 	conf, err = LoadConfig(servers)
 	if err != nil { return err }
 
-	for k, v := range conf.Languages {
-		if v.Name == "" { v.Name = k }
-	}
 	return nil
 }
 
@@ -248,7 +254,7 @@ func expected[EXPECTED any](val any) string {
 	return fmt.Sprint("Expected ", et, ", got ", gt, "(", val, ")")
 }
 
-func MakeRunnable(l Language, propname string, val any, strict bool) Runnable {
+func MakeRunnable(l LSPConfig, propname string, val any, strict bool) Runnable {
 	ctx := ResolutionContext{ l, val, propname }
 
 	if val == nil && !strict { return &NoOp{} }
@@ -299,17 +305,20 @@ func MakeRunnable(l Language, propname string, val any, strict bool) Runnable {
 }
 
 func RegisterLanguageServer(
-	language string,
 	name string,
+	languages []string,
 	cmd any,
+	is_valid any,
 	install any,
 	is_installed any,
 	env any,
 	cwd any,
 ) {
-	var l Language
+	var l LSPConfig
 	l.Name = name
 
+	l.Languages = languages
+	l.IsValid = MakeRunnable(l, "IsValid", is_valid, true)
 	l.Command = MakeRunnable(l, "Command", cmd, true)
 	l.Install = MakeRunnable(l, "Install", install, false)
 	l.IsInstalled = MakeRunnable(l, "IsInstalled", is_installed, false)
@@ -318,7 +327,7 @@ func RegisterLanguageServer(
 
 	log.Println("Registering language server: ", l)
 
-	conf.Languages[language] = l
+	conf.LSPConfigs = append(conf.LSPConfigs, l)
 }
 
 type Resolver func(ResolutionContext) (any, error)
@@ -460,7 +469,7 @@ func lspResolveLuaFunction(ctx ResolutionContext) (any, error) {
 	}
 }
 
-func luaGet[K any](l Language, luafn *LUAFn, resolver Resolver, propname string, args ...any) (K, error) {
+func luaGet[K any](l LSPConfig, luafn *LUAFn, resolver Resolver, propname string, args ...any) (K, error) {
 	var empty K
 	val, err := luafn.Run(l, args...)
 	if err != nil { return empty, err }
@@ -470,23 +479,19 @@ func luaGet[K any](l Language, luafn *LUAFn, resolver Resolver, propname string,
 	return castValue[K](ctx.modified(ctx.from, ":LUAGET:"), resolved), nil
 }
 
-func (l Language) GetCmd(root string) (*Command, error) {
+func (l LSPConfig) GetCmd(root string) (*Command, error) {
 	switch cmd := l.Command.(type) {
 	case *Command:
-		log.Println("CMD is a cmd")
 		return cmd, nil
 	case *Str:
-		log.Println("CMD is a str")
 		return &Command{[]string{cmd.str}}, nil
 	case *LUAFn:
-		log.Println("CMD is a lfn")
 		resolver := lspArrayResolver(lspResolveString, true)
 		getter := luaGet[[]string]
 		val, err := getter(l, cmd, resolver, "Command", root)
 		if err != nil { return nil, err }
 		return &Command{ val }, nil
 	case *Fn:
-		log.Println("CMD is a fn")
 		resolver := lspArrayResolver(lspResolveString, true)
 		val, err := cmd.Run(l, root)
 		if err != nil { return nil, err }
@@ -500,7 +505,7 @@ func (l Language) GetCmd(root string) (*Command, error) {
 	return nil, errors.New("Failed to get Command for LSP " + l.Name + " " + expected[Command](l.Command))
 }
 
-func (l Language) GetInstall() (*Commands, error) {
+func (l LSPConfig) GetInstall() (*Commands, error) {
 	switch cmds := l.Install.(type) {
 	case *Str: return MakeCommands([][]string{{cmds.str}}), nil
 	case *Command: return &Commands{[]Command{*cmds}}, nil
@@ -515,18 +520,23 @@ func (l Language) GetInstall() (*Commands, error) {
 	return nil, errors.New("Failed to get Install for LSP " + l.Name + " " + expected[Commands](l.Install))
 }
 
-func (l Language) GetIsInstalled() (Runnable, error) {
+func (l LSPConfig) GetIsInstalled() (Runnable, error) {
 	switch cmd := l.IsInstalled.(type) {
 	case *Str: return &Command{[]string{cmd.str}}, nil
-	case *Command: return cmd, nil
-	case *LUAFn: return cmd,  nil
-	case *Fn: return cmd, nil
-	case *NoOp: return cmd, nil
+	case *Command, *LUAFn, *Fn, *NoOp: return cmd, nil
 	default: return nil, errors.New(expected[Command](cmd))
 	}
 }
 
-func (l Language) GetEnv() (map[string]string, error) {
+func (l LSPConfig) GetIsValid() (Runnable, error) {
+	switch cmd := l.IsValid.(type) {
+	case *Str: return &Command{[]string{cmd.str}}, nil
+	case *Command, *LUAFn, *Fn, *NoOp: return cmd, nil
+	default: return nil, errors.New(expected[Command](cmd))
+	}
+}
+
+func (l LSPConfig) GetEnv() (map[string]string, error) {
 	switch env := l.Env.(type) {
 	case *Env: return env.dict, nil
 	case *LUAFn:
@@ -549,7 +559,7 @@ func (l Language) GetEnv() (map[string]string, error) {
 	return nil, errors.New("Failed to get Env for LSP " + l.Name + " " + expected[Env](l.Env))
 }
 
-func (l Language) GetCwd() (string, error) {
+func (l LSPConfig) GetCwd() (string, error) {
 	switch cwd := l.Cwd.(type) {
 		case *Str: return cwd.str, nil
 		case *LUAFn:
@@ -595,32 +605,27 @@ func LoadConfig(data []byte) (*Config, error) {
 		}
 	}()
 
-	var sconf ConfigStatic
-	if err := yaml.Unmarshal(data, &sconf); err != nil {
+	var lsps []LSPConfigStatic
+	if err := yaml.Unmarshal(data, &lsps); err != nil {
 		return nil, err
 	}
 
 	var conf Config
-	conf.Languages = make(map[string]Language)
 
-	for key, lang := range sconf.Languages {
-		var l Language
-		if len(lang.Name) > 0 {
-			l.Name = lang.Name
-		} else if len(lang.Command) > 0 {
-			l.Name = lang.Command
-		} else {
-			l.Name = key
-		}
+	for _, lang := range lsps {
+		var l LSPConfig
 		var cmd []string
 		cmd = append(cmd, lang.Command)
 		cmd = append(cmd, lang.Args...)
+		l.Name = lang.Name
+		l.Languages = lang.Languages
+		l.IsValid = &Fn{func(...any) []any { return []any{ true } }}
 		l.Command = MakeRunnable(l, "Command", cmd, true)
 		l.Cwd = MakeRunnable(l, "Cwd", lang.Cwd, false)
 		l.Env = MakeRunnable(l, "Env", lang.Env, false)
 		l.Install = MakeRunnable(l, "Install", lang.Install, false)
 		l.IsInstalled = MakeRunnable(l, "IsInstall", lang.IsInstalled, false)
-		conf.Languages[key] = l
+		conf.LSPConfigs = append(conf.LSPConfigs, l)
 	}
 
 	return &conf, nil
@@ -639,7 +644,43 @@ func call(fn lua.LValue, args ...lua.LValue) (lua.LValue, error) {
 	return ret, nil
 }
 
-func (l Language) Installed() bool {
+func (l LSPConfig) Valid_For(path string) bool {
+	is_valid, err := l.GetIsValid()
+	if err != nil {
+		log.Println(l.Name, "IsValid error (get):", err)
+		return false
+	}
+
+	_, is_noop := is_valid.(*NoOp)
+	if is_noop {
+		return true
+	}
+
+	ok, err := is_valid.Run(l, path)
+	if err != nil {
+		log.Println(l.Name, "IsValid error:", err)
+		return false
+	}
+
+	if ok == nil {
+		log.Println(l.Name, "IsValid returns nil.")
+		return false
+	}
+
+	okarr, ok_is_arr := ok.([]interface{})
+	if ok_is_arr && len(okarr) > 0 { ok = okarr[0] }
+
+	switch val := ok.(type) {
+		case bool: return val
+		case lua.LValue: return lua.LVAsBool(val)
+		case lua.LBool: return lua.LVAsBool(val)
+		default: log.Println(l.Name, "Warning: IsValid returns incorrect type! Got: ", reflect.TypeOf(val), val, RunnableString(is_valid))
+	}
+
+	return false
+}
+
+func (l LSPConfig) Installed() bool {
 	is_installed, err := l.GetIsInstalled()
 	if err != nil {
 		log.Println(l.Name, "IsInstalled error (get):", err);
@@ -685,7 +726,7 @@ func (l Language) Installed() bool {
 	return false
 }
 
-func (l Language) DoInstall() error {
+func (l LSPConfig) DoInstall() error {
 	if l.Installed() { return nil }
 	cmds, err := l.GetInstall()
 	if err != nil { return err }

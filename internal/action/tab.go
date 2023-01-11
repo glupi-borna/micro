@@ -139,7 +139,8 @@ func (t *TabList) HandleEvent(event tcell.Event) {
 // Display updates the names and then displays the tab bar
 func (t *TabList) Display() {
 	t.UpdateNames()
-	if len(t.List) > 1 {
+	always_show := config.GetGlobalOption("tabbar").(bool)
+	if len(t.List) > 1 || always_show {
 		t.TabWindow.Display()
 	}
 }
@@ -266,6 +267,14 @@ func (t *Tab) SetActive(i int) {
 	}
 }
 
+func (t *Tab) Activate() {
+	ind := -1
+	for i, tt := range Tabs.List {
+		if t == tt { ind = i ; break }
+	}
+	Tabs.SetActive(ind)
+}
+
 // GetPane returns the pane with the given split index
 func (t *Tab) GetPane(splitid uint64) int {
 	for i, p := range t.Panes {
@@ -305,4 +314,31 @@ func (t *Tab) CurPane() *BufPane {
 		return nil
 	}
 	return p
+}
+
+func NewTab(args []string) []*Tab {
+	width, height := screen.Screen.Size()
+	iOffset := config.GetInfoBarOffset()
+	var tabs []*Tab
+	if len(args) > 0 {
+		for _, a := range args {
+			b, err := buffer.NewBufferFromFile(a, buffer.BTDefault)
+			if err != nil {
+				InfoBar.Error(err)
+				return nil
+			}
+			tp := NewTabFromBuffer(0, 0, width, height-1-iOffset, b)
+			Tabs.AddTab(tp)
+			Tabs.SetActive(len(Tabs.List) - 1)
+			tabs = append(tabs, tp)
+		}
+	} else {
+		b := buffer.NewBufferFromString("", "", buffer.BTDefault)
+		tp := NewTabFromBuffer(0, 0, width, height-iOffset, b)
+		Tabs.AddTab(tp)
+		Tabs.SetActive(len(Tabs.List) - 1)
+		tabs = append(tabs, tp)
+	}
+
+	return tabs
 }

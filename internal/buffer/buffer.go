@@ -130,7 +130,7 @@ type SharedBuffer struct {
 	// Hash of the original buffer -- empty if fastdirty is on
 	origHash [md5.Size]byte
 
-	Server  *lsp.Server
+	Servers  []*lsp.Server
 	version int32
 }
 
@@ -167,13 +167,25 @@ func (b *SharedBuffer) lspDidChange(start, end Loc, text string) {
 			Text: text,
 		}
 
-		b.Server.DidChange(b.AbsPath, b.version, []lspt.TextDocumentContentChangeEvent{change})
+		for _, s := range b.Servers {
+			s.DidChange(b.AbsPath, b.version, []lspt.TextDocumentContentChangeEvent{change})
+		}
 	}
+}
+
+func (b *SharedBuffer) ActiveServers() []*lsp.Server {
+	var servers []*lsp.Server
+	for _, s := range b.Servers {
+		if s.State != lsp.STATE_CREATED {
+			servers = append(servers, s)
+		}
+	}
+	return servers
 }
 
 // HasLSP returns whether this buffer is communicating with an LSP server
 func (b *SharedBuffer) HasLSP() bool {
-	return b.Server != nil && b.Server.Active
+	return len(b.ActiveServers()) > 0
 }
 
 // MarkModified marks the buffer as modified for this frame
@@ -475,35 +487,45 @@ func NewBuffer(r io.Reader, size int64, path string, startcursor Loc, btype BufT
 	return b
 }
 
-// initializes an LSP server if possible, or calls didOpen on an existing
-// LSP server in this workspace
+// initializes LSP servers if they are not already running,
+// or calls didOpen on them
 func (b *Buffer) lspInit() {
 	ft := lsp.Filetype(b.Settings["filetype"].(string))
-	l, ok := lsp.GetLanguage(ft)
-	if (!ok) { log.Println("No server found for language ", ft); return; }
-	if (!l.Installed()) { log.Println("Language server ", l.Name, " is not installed!"); return }
+	languages := lsp.GetLanguages(ft)
+	if (len(languages) == 0) { WriteLogLn("No server found for language'", ft, "'"); return }
 
 	wd, err := os.Getwd()
 	if (err != nil) { return; }
 
-	b.Server = lsp.GetServer(l, wd)
-	if b.Server == nil {
-		b.Server, err = lsp.StartServer(l)
-		if err == nil {
-			d, _ := os.Getwd()
-			b.Server.Initialize(d)
-		} else {
-			log.Println(b.Path, "failed to start server: ", err)
+	util.ChanMapAll(languages, func(l lsp.LSPConfig) (bool, bool) {
+		if (!l.Installed()) {
+			WriteLogLn("Language server", l.Name, "is not installed!")
+			return false, false
 		}
-	}
 
-	if b.HasLSP() {
-		bytes := b.Bytes()
-		if len(bytes) == 0 {
-			bytes = []byte{'\n'}
+		s := lsp.GetOrStartServer(l, wd, b.AbsPath)
+
+		if s != nil {
+			bytes := b.Bytes()
+			if len(bytes) == 0 { bytes = []byte{'\n'} }
+			s.DidOpen(b.AbsPath, ft, string(bytes), b.version)
+			b.Servers = append(b.Servers, s)
 		}
-		b.Server.DidOpen(b.AbsPath, ft, string(bytes), b.version)
+
+		return false, false
+	})
+}
+
+func (b *Buffer) LSPRestart() {
+	var wg sync.WaitGroup
+	for _, s := range b.Servers {
+		wg.Add(1)
+		go func() {
+			s.Restart()
+			wg.Done()
+		}()
 	}
+	wg.Wait()
 }
 
 // Close removes this buffer from the list of open buffers
@@ -532,8 +554,8 @@ func (b *Buffer) Fini() {
 	}
 
 	atomic.StoreInt32(&(b.fini), int32(1))
-	if b.HasLSP() {
-		b.Server.DidClose(b.AbsPath)
+	for _, s := range b.ActiveServers() {
+		s.DidClose(b.AbsPath)
 	}
 }
 
@@ -647,29 +669,57 @@ func (b *Buffer) ApplyDeltas(deltas []Delta) {
 	}
 }
 
-func (b *Buffer) GetRenameSymbol() (string, error) {
+type ServerRenameSymbol struct {
+	sym lsp.RenameSymbol
+	server *lsp.Server
+}
+
+func sort_rename_symbols(arr []ServerRenameSymbol) {
+	sort.SliceStable(arr, func(i, j int) bool {
+		a := arr[i].sym
+		b := arr[j].sym
+		if a.Placeholder != "" && b.Placeholder == "" { return true }
+		if a.Placeholder == "" && b.Placeholder != "" { return false }
+		if a.UseRange && !b.UseRange { return true }
+		if !a.UseRange && b.UseRange { return false }
+		return true
+	})
+}
+
+func (b *Buffer) GetRenameSymbol() (string, *lsp.Server, error) {
 	cur := b.GetActiveCursor()
 
 	if !b.HasLSP() {
-		return string(b.WordAt(cur.Loc)), nil
+		return string(b.WordAt(cur.Loc)), nil, nil
 	}
 
-	sym, err := b.Server.GetRenameSymbol(b.AbsPath, cur.ToPos())
-	if err != nil {
-		rpcerr, ok := err.(*lsp.RPCError)
-		if ok && rpcerr.LSPError.Code == lsp.MethodNotFound {
+	syms := util.ChanMapAll(b.Servers, func (s *lsp.Server) (ServerRenameSymbol, bool) {
+		sym, err := s.GetRenameSymbol(b.AbsPath, cur.ToPos())
+		if err != nil {
 			sym = lsp.RenameSymbol{
 				CanRename: true,
 				UseDefault: true,
 			}
-		} else {
-			return "", err
+			rpcerr, ok := err.(*lsp.RPCError)
+			if !ok || rpcerr.LSPError.Code != lsp.MethodNotFound {
+				WriteLogLn(
+					"RPC ERROR - GetRenameSymbol:",
+					rpcerr.LSPError.Code.String(),
+					rpcerr.LSPError.Message)
+			}
 		}
+
+		if sym.CanRename { return ServerRenameSymbol{sym, s}, true }
+		return ServerRenameSymbol{}, false
+	})
+
+
+	if len(syms) == 0 {
+		return "", nil, errors.New("Symbol is not renamable!")
 	}
 
-	if ! sym.CanRename {
-		return "", errors.New("Symbol is not renamable!")
-	}
+	sort_rename_symbols(syms)
+	sym := syms[0].sym
 
 	var prompt_string string
 	if sym.Placeholder != "" {
@@ -683,10 +733,12 @@ func (b *Buffer) GetRenameSymbol() (string, error) {
 		prompt_string = string(b.WordAt(cur.Loc))
 	}
 
-	return prompt_string, nil
+	return prompt_string, syms[0].server, nil
 }
 
 func (b *Buffer) GetRenameEdits(new_name string) (lspt.WorkspaceEdit, error) {
+	return lspt.WorkspaceEdit{}, errors.New("Not implemented")
+	/*
 	cur := b.GetActiveCursor()
 
 	if !b.HasLSP() {
@@ -699,6 +751,7 @@ func (b *Buffer) GetRenameEdits(new_name string) (lspt.WorkspaceEdit, error) {
 	}
 
 	return we, nil
+	*/
 }
 
 // FileType returns the buffer's filetype
@@ -1422,12 +1475,21 @@ func (b *Buffer) LSPHover() ([]string, error) {
 	}
 
 	cur := b.GetActiveCursor()
-	info, err := b.Server.Hover(b.AbsPath, cur.ToPos())
-	if err != nil {
-		return nil, err
+	cp := cur.ToPos()
+
+	fn := func (s *lsp.Server) (string, bool) {
+		info, err := s.Hover(b.AbsPath, cp)
+		if err == nil && info != "" {
+			return info, true
+		}
+		if err != nil {
+			WriteLogLn("LSP Hover Error (" + s.GetLanguage().Name + ")", err)
+		}
+		return "", false
 	}
 
-	splits := strings.Split(info, "\n")
+	infostr := strings.Join(util.ChanMapAll(b.Servers, fn), "\n")
+	splits := strings.Split(infostr, "\n")
 
 	var filtered_splits []string
 	for _, str := range splits {
@@ -1445,10 +1507,15 @@ func (b *Buffer) LSPDefinition() ([]lspt.Location, error) {
 	}
 
 	cur := b.GetActiveCursor()
-	res, err := b.Server.GetDefinition(b.AbsPath, cur.ToPos())
-	if err != nil {
-		return nil, err
+	cp := cur.ToPos()
+
+	fn := func(s *lsp.Server) ([]lspt.Location, bool) {
+		res, err := s.GetDefinition(b.AbsPath, cp)
+		if err == nil { return res, true }
+		return nil, false
 	}
+	res := util.Fold(util.ChanMapAll(b.Servers, fn)...)
+
 	return res, nil
 }
 
@@ -1458,10 +1525,16 @@ func (b *Buffer) LSPDeclaration() ([]lspt.Location, error) {
 	}
 
 	cur := b.GetActiveCursor()
-	res, err := b.Server.GetDeclaration(b.AbsPath, cur.ToPos())
-	if err != nil {
-		return nil, err
+	cp := cur.ToPos()
+
+	fn := func(s *lsp.Server) ([]lspt.Location, bool) {
+			res, err := s.GetDeclaration(b.AbsPath, cp)
+			if err == nil { return res, true }
+			return nil, false
 	}
+
+	res := util.Fold(util.ChanMapAll(b.Servers, fn)...)
+
 	return res, nil
 }
 
@@ -1471,10 +1544,15 @@ func (b *Buffer) LSPTypeDefinition() ([]lspt.Location, error) {
 	}
 
 	cur := b.GetActiveCursor()
-	res, err := b.Server.GetTypeDefinition(b.AbsPath, cur.ToPos())
-	if err != nil {
-		return nil, err
+	cp := cur.ToPos()
+
+	fn := func(s *lsp.Server) ([]lspt.Location, bool) {
+		res, err := s.GetTypeDefinition(b.AbsPath, cp)
+		if err == nil { return res, true }
+		return nil, false
 	}
+
+	res := util.Fold(util.ChanMapAll(b.Servers, fn)...)
 	return res, nil
 }
 
@@ -1484,10 +1562,15 @@ func (b *Buffer) LSPReferences() ([]lspt.Location, error) {
 	}
 
 	cur := b.GetActiveCursor()
-	res, err := b.Server.FindReferences(b.AbsPath, cur.ToPos())
-	if err != nil {
-		return nil, err
+	cp := cur.ToPos()
+
+	fn := func(s *lsp.Server) ([]lspt.Location, bool) {
+		res, err := s.FindReferences(b.AbsPath, cp)
+		if err == nil { return res, true }
+		return nil, false
 	}
+
+	res := util.Fold(util.ChanMapAll(b.Servers, fn)...)
 	return res, nil
 }
 
@@ -1497,9 +1580,24 @@ func (b *Buffer) SearchMatch(pos Loc) bool {
 	return b.LineArray.SearchMatch(b, pos)
 }
 
+func (b *Buffer) GetDiagnostics() []lspt.Diagnostic  {
+	fn := func (s *lsp.Server) ([]lspt.Diagnostic, bool) {
+		return s.GetDiagnostics(b.AbsPath), true
+	}
+
+	return util.Fold(util.ChanMapAll(b.Servers, fn)...)
+}
+
 // WriteLog writes a string to the log buffer
 func WriteLog(s string) {
+	log.Print(s)
 	LogBuf.EventHandler.Insert(LogBuf.End(), s)
+}
+
+func WriteLogLn(args ...any) string {
+	str := fmt.Sprintln(args...)
+	// WriteLog(str)
+	return str
 }
 
 // GetLogBuf returns the log buffer
@@ -1510,6 +1608,13 @@ func GetLogBuf() *Buffer {
 func FindBufferByID(id int) *Buffer {
 	for _, buf := range OpenBuffers {
 		if buf.ID == id { return buf }
+	}
+	return nil
+}
+
+func FindBufferByAbsPath(path string) *Buffer {
+	for _, buf := range OpenBuffers {
+		if buf.AbsPath == path { return buf }
 	}
 	return nil
 }

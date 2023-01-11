@@ -511,3 +511,46 @@ func Unzip(src, dest string) error {
 
 	return nil
 }
+
+func ChanAll[K any](chans ...<-chan K) []K {
+	var res []K
+	for _, c := range chans {
+		val, ok := <- c
+		if ok {
+			res = append(res, val)
+		}
+	}
+	return res
+}
+
+func ChanMap[IN any, OUT any](arr []IN, fn func(IN)<-chan OUT) []<-chan OUT {
+	var chans []<-chan OUT
+	for _, item := range arr {
+		chans = append(chans, fn(item))
+	}
+	return chans
+}
+
+func Fold[K any](arrays ...[]K) []K {
+	var arr []K
+	for _, array := range arrays {
+		arr = append(arr, array...)
+	}
+	return arr
+}
+
+func ChanMapAll[IN any, OUT any](
+	array []IN,
+	fn func(IN) (OUT, bool),
+) []OUT {
+	return ChanAll(ChanMap(array, func(item IN) <-chan OUT {
+		c := make(chan OUT)
+		go func() {
+			defer close(c)
+			res, ok := fn(item)
+			if ok { c <- res }
+		}()
+		return c
+	})...)
+}
+

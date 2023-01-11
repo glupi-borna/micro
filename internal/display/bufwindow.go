@@ -264,15 +264,14 @@ func (w *BufWindow) LocFromVisual(svloc buffer.Loc) buffer.Loc {
 	return w.LocFromVLoc(vloc)
 }
 
+
 func (w *BufWindow) hasDiagnosticAt(vloc *buffer.Loc, bloc *buffer.Loc) (bool, tcell.Style) {
-	diags := w.Buf.Server.GetDiagnostics(w.Buf.AbsPath)
-	if diags != nil {
-		for _, d := range diags {
-			if int(d.Range.Start.Line) == bloc.Y {
-				return true, lsp.Style(&d)
-			}
+	for _, d := range w.Buf.GetDiagnostics() {
+		if int(d.Range.Start.Line) == bloc.Y {
+			return true, lsp.Style(&d)
 		}
 	}
+
 	return false, config.DefStyle
 }
 
@@ -711,18 +710,20 @@ func (w *BufWindow) displayBuffer() {
 		}
 
 		wrap := func() {
-			vloc.X = 0
-			if diffgutter {
-				w.drawDiffGutter(lineNumStyle, true, &vloc, &bloc)
-			}
+			if vloc.Y >= 0 {
+				vloc.X = 0
+				if diffgutter {
+					w.drawDiffGutter(lineNumStyle, true, &vloc, &bloc)
+				}
 
-			// This will draw an empty line number because the current line is wrapped
-			if ruler {
-				hasMsg, msgStyle := w.hasMessageOrDiagnosticAt(&vloc, &bloc)
-				if hasMsg {
-					w.drawLineNum(msgStyle, markStyle, true, &vloc, &bloc)
-				} else {
-					w.drawLineNum(lineNumStyle, markStyle, true, &vloc, &bloc)
+				// This will draw an empty line number because the current line is wrapped
+				if ruler {
+					hasMsg, msgStyle := w.hasMessageOrDiagnosticAt(&vloc, &bloc)
+					if hasMsg {
+						w.drawLineNum(msgStyle, markStyle, true, &vloc, &bloc)
+					} else {
+						w.drawLineNum(lineNumStyle, markStyle, true, &vloc, &bloc)
+					}
 				}
 			}
 		}
@@ -933,9 +934,11 @@ func (w *BufWindow) displayCompleteBox() {
 		if charcount > labelw {
 			labelw = charcount
 		}
-		charcount = util.CharacterCountInString(comp.Detail)
-		if charcount > detailw {
-			detailw = charcount
+		if comp.Detail != comp.Kind {
+			charcount = util.CharacterCountInString(comp.Detail)
+			if charcount > detailw {
+				detailw = charcount
+			}
 		}
 		charcount = util.CharacterCountInString(comp.Kind)
 		if charcount > kindw {
@@ -971,7 +974,9 @@ func (w *BufWindow) displayCompleteBox() {
 		cur := i == w.Buf.CurCompletion
 		display(comp.Label+" ", labelw, 0, i+1, cur)
 		display(comp.Kind+" ", kindw, labelw, i+1, cur)
-		display(comp.Detail, detailw, labelw+kindw, i+1, cur)
+		if comp.Detail != comp.Kind {
+			display(comp.Detail, detailw, labelw+kindw, i+1, cur)
+		}
 	}
 }
 

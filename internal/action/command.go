@@ -449,27 +449,7 @@ func (h *BufPane) EvalCmd(args []string) {
 }
 
 // NewTabCmd opens the given file in a new tab
-func (h *BufPane) NewTabCmd(args []string) {
-	width, height := screen.Screen.Size()
-	iOffset := config.GetInfoBarOffset()
-	if len(args) > 0 {
-		for _, a := range args {
-			b, err := buffer.NewBufferFromFile(a, buffer.BTDefault)
-			if err != nil {
-				InfoBar.Error(err)
-				return
-			}
-			tp := NewTabFromBuffer(0, 0, width, height-1-iOffset, b)
-			Tabs.AddTab(tp)
-			Tabs.SetActive(len(Tabs.List) - 1)
-		}
-	} else {
-		b := buffer.NewBufferFromString("", "", buffer.BTDefault)
-		tp := NewTabFromBuffer(0, 0, width, height-iOffset, b)
-		Tabs.AddTab(tp)
-		Tabs.SetActive(len(Tabs.List) - 1)
-	}
-}
+func (h *BufPane) NewTabCmd(args []string) { NewTab(args) }
 
 func SetGlobalOptionNative(option string, nativeValue interface{}) error {
 	local := false
@@ -613,6 +593,11 @@ func (h *BufPane) SetLocalCmd(args []string) {
 	}
 }
 
+const (
+	Place_Global="global"
+	Place_Local="local"
+)
+
 // ShowCmd shows the value of the given option
 func (h *BufPane) ShowCmd(args []string) {
 	if len(args) < 1 {
@@ -621,7 +606,9 @@ func (h *BufPane) ShowCmd(args []string) {
 	}
 
 	var option interface{}
+	place := Place_Global
 	if opt, ok := h.Buf.Settings[args[0]]; ok {
+		place = Place_Local
 		option = opt
 	} else if opt, ok := config.GlobalSettings[args[0]]; ok {
 		option = opt
@@ -632,7 +619,7 @@ func (h *BufPane) ShowCmd(args []string) {
 		return
 	}
 
-	InfoBar.Message(option)
+	InfoBar.Message(place + ":", option)
 }
 
 // ShowKeyCmd displays the action that a key is bound to

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/zyedidia/micro/v2/internal/util"
+	"github.com/zyedidia/micro/v2/internal/lsp"
 	"go.lsp.dev/protocol"
 )
 
@@ -270,10 +271,15 @@ func LSPComplete(b *Buffer) []Completion {
 
 	c := b.GetActiveCursor()
 	pos := c.ToPos()
-	items, err := b.Server.Completion(b.AbsPath, pos)
-	if err != nil {
-		return nil
+
+	fn := func(s *lsp.Server) ([]protocol.CompletionItem, bool) {
+		res, err := s.Completion(b.AbsPath, pos)
+		if err == nil { return res, true }
+		s.Log("Complete:", err)
+		return nil, false
 	}
+
+	items := util.Fold(util.ChanMapAll(b.Servers, fn)...)
 
 	completions := make([]Completion, len(items))
 	input, argstart := GetWord(b)

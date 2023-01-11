@@ -15,6 +15,7 @@ import (
 	"github.com/zyedidia/micro/v2/internal/config"
 	"github.com/zyedidia/micro/v2/internal/screen"
 	"github.com/zyedidia/micro/v2/internal/util"
+	"github.com/zyedidia/micro/v2/internal/lsp"
 	"golang.org/x/text/encoding"
 	"golang.org/x/text/encoding/htmlindex"
 	"golang.org/x/text/transform"
@@ -197,7 +198,11 @@ func (b *Buffer) saveToFile(filename string, withSudo bool) error {
 	b.UpdateRules()
 
 	if b.HasLSP() {
-		b.Server.DidSave(b.AbsPath)
+		fn := func(s *lsp.Server) (bool, bool) {
+			s.DidSave(b.AbsPath)
+			return false, false
+		}
+		util.ChanMapAll(b.Servers, fn)
 	}
 
 	return err

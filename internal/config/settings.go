@@ -355,6 +355,7 @@ var DefaultGlobalOnlySettings = map[string]interface{}{
 	"divreverse":     true,
 	"infobar":        true,
 	"keymenu":        false,
+	"tabbar":         true,
 	"mouse":          true,
 	"parsecursor":    false,
 	"paste":          false,

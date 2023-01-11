@@ -18,6 +18,7 @@ import (
 	"github.com/zyedidia/micro/v2/internal/screen"
 	"github.com/zyedidia/micro/v2/internal/shell"
 	"github.com/zyedidia/micro/v2/internal/util"
+	"github.com/zyedidia/micro/v2/internal/lsp"
 	"github.com/zyedidia/tcell/v2"
 	"go.lsp.dev/protocol"
 )
@@ -1940,7 +1941,7 @@ func (h *BufPane) Tooltip() bool {
 
 func (h *BufPane) Rename() bool {
 	b := h.Buf
-	rename_symbol, err := b.GetRenameSymbol()
+	rename_symbol, server, err := b.GetRenameSymbol()
 
 	if err != nil {
 		InfoBar.Error(err)
@@ -1950,9 +1951,7 @@ func (h *BufPane) Rename() bool {
 	InfoBar.Prompt(
 		"Rename: " + rename_symbol + " -> ", rename_symbol, "Rename", nil,
 		func(new_name string, canceled bool) {
-			if canceled {
-				return
-			}
+			if canceled { return }
 
 			new_name = strings.TrimSpace(new_name)
 			if new_name == "" {
@@ -1960,10 +1959,10 @@ func (h *BufPane) Rename() bool {
 				return
 			}
 
-			if !b.HasLSP() {
+			if server == nil {
 				h.ReplaceAllCmd([]string{ rename_symbol, new_name, "-l" })
 			} else {
-				res, err := b.Server.RenameSymbol(b.AbsPath, b.GetActiveCursor().ToPos(), new_name)
+				res, err := server.RenameSymbol(b.AbsPath, b.GetActiveCursor().ToPos(), new_name)
 				if err != nil {
 					InfoBar.Error(err)
 					return
@@ -2026,19 +2025,28 @@ func (h *BufPane) AutoFormat() bool {
 	var err error
 	var edits []protocol.TextEdit
 
+	fmtopt := protocol.FormattingOptions{
+		InsertSpaces: h.Buf.Settings["tabstospaces"].(bool),
+		TabSize:      h.Buf.Settings["tabsize"].(uint32),
+	}
+
 	if h.Cursor.HasSelection() {
-		edits, err = h.Buf.Server.DocumentRangeFormat(h.Buf.AbsPath, protocol.Range{
+		prange := protocol.Range{
 			Start: h.Cursor.CurSelection[0].ToPos(),
 			End:   h.Cursor.CurSelection[1].ToPos(),
-		}, protocol.FormattingOptions{
-			InsertSpaces: h.Buf.Settings["tabstospaces"].(bool),
-			TabSize:      h.Buf.Settings["tabsize"].(uint32),
-		})
+		}
+
+		edits = util.Fold(util.ChanMapAll(h.Buf.Servers, func (s *lsp.Server) ([]protocol.TextEdit, bool) {
+			res, e := s.DocumentRangeFormat(h.Buf.AbsPath, prange, fmtopt)
+			if e == nil { return res, true }
+			return nil, false
+		})...)
 	} else {
-		edits, err = h.Buf.Server.DocumentFormat(h.Buf.AbsPath, protocol.FormattingOptions{
-			InsertSpaces: h.Buf.Settings["tabstospaces"].(bool),
-			TabSize:      h.Buf.Settings["tabsize"].(uint32),
-		})
+		edits = util.Fold(util.ChanMapAll(h.Buf.Servers, func (s *lsp.Server) ([]protocol.TextEdit, bool) {
+			res, e := s.DocumentFormat(h.Buf.AbsPath, fmtopt)
+			if e == nil { return res, true }
+			return nil, false
+		})...)
 	}
 
 	if err != nil {

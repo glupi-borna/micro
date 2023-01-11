@@ -3,6 +3,8 @@ package buffer
 import (
 	"github.com/zyedidia/micro/v2/internal/config"
 	"github.com/zyedidia/micro/v2/internal/screen"
+	"github.com/zyedidia/micro/v2/internal/util"
+	"github.com/zyedidia/micro/v2/internal/lsp"
 )
 
 func (b *Buffer) SetOptionNative(option string, nativeValue interface{}) error {
@@ -43,7 +45,12 @@ func (b *Buffer) SetOptionNative(option string, nativeValue interface{}) error {
 		if nativeValue.(bool) && !b.HasLSP() {
 			b.lspInit()
 		} else if b.HasLSP() {
-			b.Server.Shutdown()
+			fn := func (s *lsp.Server) (bool, bool) {
+				s.Shutdown()
+				return false, false
+			}
+			util.ChanMapAll(b.Servers, fn)
+			b.Servers = []*lsp.Server{}
 		}
 	} else if option == "hlsearch" {
 		for _, buf := range OpenBuffers {

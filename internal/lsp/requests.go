@@ -60,61 +60,10 @@ func (e *RPCError) Error() string {
 	return e.LSPError.Code.String() + ": " + e.LSPError.Message
 }
 
-type RPCCompletion struct {
-	RPCVersion string             `json:"jsonrpc"`
-	ID         int                `json:"id"`
-	Result     lsp.CompletionList `json:"result"`
-}
-
-type RPCCompletionAlternate struct {
-	RPCVersion string               `json:"jsonrpc"`
-	ID         int                  `json:"id"`
-	Result     []lsp.CompletionItem `json:"result"`
-}
-
-type RPCFormat struct {
-	RPCVersion string         `json:"jsonrpc"`
-	ID         int            `json:"id"`
-	Result     []lsp.TextEdit `json:"result"`
-}
-
-type LSPHover struct {
-	// Contents is the hover's content
-	Contents interface{} `json:"contents"`
-
-	// Range an optional range is a range inside a text document
-	// that is used to visualize a hover, e.g. by changing the background color.
-	Range lsp.Range `json:"range,omitempty"`
-}
-
-type RPCHover struct {
-	RPCVersion string         `json:"jsonrpc"`
-	ID         int            `json:"id"`
-	Result     LSPHover       `json:"result"`
-}
-
-type RPCLocation struct {
-	RPCVersion string 		   `json:"jsonrpc"`
-	ID         int             `json:"id"`
-	Result     lsp.Location    `json:"result"`
-}
-
-type RPCLocations struct {
-	RPCVersion string 		    `json:"jsonrpc"`
-	ID         int              `json:"id"`
-	Result     []lsp.Location   `json:"result"`
-}
-
-type RPCLocationLinks struct {
-	RPCVersion string 		        `json:"jsonrpc"`
-	ID         int                  `json:"id"`
-	Result     []lsp.LocationLink   `json:"result"`
-}
-
-type RPCRange struct {
-	RPCVersion string               `json:"jsonrpc"`
-	ID         int                  `json:"id"`
-	Result     lsp.Range            `json:"result"`
+type RPCResponse[RESULT any] struct {
+	RPCVersion string `json:"jsonrpc"`
+	ID         int    `json:"id"`
+	Result     RESULT `json:"result"`
 }
 
 type rangePlaceholder struct {
@@ -122,27 +71,8 @@ type rangePlaceholder struct {
 	Placeholder string              `json:"placeholder"`
 }
 
-type RPCRangePlaceholder struct {
-	RPCVersion string               `json:"jsonrpc"`
-	ID         int                  `json:"id"`
-	Result     rangePlaceholder     `json:"result"`
-}
-
 type renameDefault struct {
 	DefaultBehavior bool            `json:"defaultBehavior"`
-}
-
-type RPCRenameDefault struct {
-	RPCVersion string               `json:"jsonrpc"`
-	ID         int                  `json:"id"`
-	Result     renameDefault        `json:"result"`
-}
-
-
-type RPCRename struct {
-	RPCVersion string               `json:"jsonrpc"`
-	ID         int                  `json:"id"`
-	Result     lsp.WorkspaceEdit    `json:"result"`
 }
 
 type RenameSymbol struct {
@@ -152,6 +82,21 @@ type RenameSymbol struct {
 	UseRange    bool
 	CanRename   bool
 }
+
+type LSPHover struct {
+	Contents interface{} `json:"contents"`
+}
+
+type RPCCompletion = RPCResponse[lsp.CompletionList]
+type RPCCompletionAlt = RPCResponse[[]lsp.CompletionItem]
+type RPCHover = RPCResponse[LSPHover]
+type RPCLocation = RPCResponse[lsp.Location]
+type RPCLocations = RPCResponse[[]lsp.Location]
+type RPCLocationLinks = RPCResponse[[]lsp.LocationLink]
+type RPCRange = RPCResponse[lsp.Range]
+type RPCRangePlaceholder = RPCResponse[rangePlaceholder]
+type RPCRenameDefault = RPCResponse[renameDefault]
+type RPCRename = RPCResponse[lsp.WorkspaceEdit]
 
 func (s *Server) sendRequestChecked(method string, params interface{}) ([]byte, error) {
 	resp, err := s.sendRequest(method, params)
@@ -167,6 +112,34 @@ func (s *Server) sendRequestChecked(method string, params interface{}) ([]byte, 
 
 	return resp, nil
 }
+
+func sendUnmarshal[K any](s *Server, method string, params interface{}) (K, error) {
+	var empty K
+	resp, err := s.sendRequestChecked(method, params)
+	if err != nil { return empty, err }
+
+	var r RPCResponse[K]
+	err = json.Unmarshal(resp, &r)
+	if err != nil { return empty, err }
+
+	return r.Result, nil
+}
+
+func typedUnmarshaller[P any, K any](method string) func(*Server, P)(K, error) {
+	return func(s *Server, params P)(K, error) {
+		return sendUnmarshal[K](s, method, params)
+	}
+}
+
+var unmarshalFormat = typedUnmarshaller[
+	lsp.DocumentFormattingParams,
+	[]lsp.TextEdit,
+](lsp.MethodTextDocumentFormatting)
+
+var unmarshalRangeFormat = typedUnmarshaller[
+	lsp.DocumentRangeFormattingParams,
+	[]lsp.TextEdit,
+](lsp.MethodTextDocumentRangeFormatting)
 
 func Position(x, y uint32) lsp.Position {
 	return lsp.Position{
@@ -188,18 +161,7 @@ func (s *Server) DocumentFormat(filename string, options lsp.FormattingOptions) 
 		TextDocument: doc,
 	}
 
-	resp, err := s.sendRequestChecked(lsp.MethodTextDocumentFormatting, params)
-	if err != nil {
-		return nil, err
-	}
-
-	var r RPCFormat
-	err = json.Unmarshal(resp, &r)
-	if err != nil {
-		return nil, err
-	}
-
-	return r.Result, nil
+	return unmarshalFormat(s, params)
 }
 
 func (s *Server) DocumentRangeFormat(filename string, r lsp.Range, options lsp.FormattingOptions) ([]lsp.TextEdit, error) {
@@ -217,18 +179,7 @@ func (s *Server) DocumentRangeFormat(filename string, r lsp.Range, options lsp.F
 		TextDocument: doc,
 	}
 
-	resp, err := s.sendRequestChecked(lsp.MethodTextDocumentFormatting, params)
-	if err != nil {
-		return nil, err
-	}
-
-	var rpc RPCFormat
-	err = json.Unmarshal(resp, &rpc)
-	if err != nil {
-		return nil, err
-	}
-
-	return rpc.Result, nil
+	return unmarshalRangeFormat(s, params)
 }
 
 func (s *Server) Completion(filename string, pos lsp.Position) ([]lsp.CompletionItem, error) {
@@ -256,7 +207,7 @@ func (s *Server) Completion(filename string, pos lsp.Position) ([]lsp.Completion
 	if err == nil {
 		return r.Result.Items, nil
 	}
-	var ra RPCCompletionAlternate
+	var ra RPCCompletionAlt
 	err = json.Unmarshal(resp, &ra)
 	if err != nil {
 		return nil, err
@@ -264,23 +215,19 @@ func (s *Server) Completion(filename string, pos lsp.Position) ([]lsp.Completion
 	return ra.Result, nil
 }
 
-func (s *Server) CompletionResolve() {
-
-}
-
-func extractString(value reflect.Value, original interface{}) string {
-	if (original == nil) { return "" }
-	if (value.IsZero()) { return "err: zero value" }
+func (s *Server) extractString(value reflect.Value, original interface{}) (string, error) {
+	if (original == nil) { return "", nil }
+	// if (value.IsZero()) { return "" }
 	rt := value.Type()
 	switch rt.Kind() {
 		case reflect.String:
-			return value.String()
+			return value.String(), nil
 
 		case reflect.Map:
 			value := value.MapIndex(reflect.ValueOf("value"))
-			if value.IsZero() { return "err: map: zero value" }
-			if !value.IsValid() { return "err: map: invalid value" }
-			return extractString(value, original)
+			if value.IsZero() { return "", errors.New("map: zero value") }
+			if !value.IsValid() { return "", errors.New("map: invalid value") }
+			return s.extractString(value, original)
 
 		case reflect.Slice: fallthrough
 		case reflect.Array:
@@ -288,31 +235,37 @@ func extractString(value reflect.Value, original interface{}) string {
 
 			str := ""
 			for i:=0; i<len; i++ {
-				str += extractString(value.Index(i), original) + "\n"
+				substr, err := s.extractString(value.Index(i), original)
+				if err != nil { return "", err }
+				str += substr + "\n"
 			}
 
-			return str
+			return str, nil
 
 		case reflect.Struct:
 			len := rt.NumField()
 			str := ""
 			for i:=0; i<len; i++ {
+				if rt.Field(i).Name == "Value" {
+					return value.Field(i).String(), nil
+				}
 				str += rt.Field(i).Name + ":" + rt.Field(i).Type.Name() + "\n"
 			}
-			return "err: struct: "+str
+			return "", errors.New(fmt.Sprint("struct:", str))
 
 		default:
 			iface := value.Interface()
 			switch val := iface.(type){
-				case string: return val
+				case string: return val, nil
 				case map[string]interface{}:
 					v, ok := val["value"]
-					if !ok { return "no value field!" }
+					if !ok { return "", errors.New("no value field!") }
 					str, ok := v.(string)
-					if !ok { return "value field is not string!" }
-					return str
+					if !ok { return "", errors.New("value field is not a string!") }
+					return str, nil
 			}
-			return "err: interface: "+fmt.Sprintf("%v", rt.Kind().String())+": "+fmt.Sprintf("%v", original)
+
+			return "", errors.New("interface: " + fmt.Sprintf("%v: %v", rt.Kind().String(), original))
 	}
 }
 
@@ -334,7 +287,7 @@ func (s *Server) Hover(filename string, pos lsp.Position) (string, error) {
 		return "", err
 	}
 
-	return extractString(reflect.ValueOf(ra.Result.Contents), ra.Result.Contents), nil
+	return s.extractString(reflect.ValueOf(ra.Result.Contents), ra.Result.Contents)
 }
 
 func (s *Server) GetDefinition(filename string, pos lsp.Position) ([]lsp.Location, error) {
@@ -428,6 +381,7 @@ func (s *Server) GetRenameSymbol(filename string, pos lsp.Position) (RenameSymbo
 		return RenameSymbol{
 			Range: ra1.Result.Range,
 			Placeholder: ra1.Result.Placeholder,
+			UseRange: false,
 			CanRename: true,
 		}, nil
 	}

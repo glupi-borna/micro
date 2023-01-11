@@ -13,41 +13,102 @@ import (
 	"sync"
 	"time"
 	"fmt"
+	"runtime/debug"
 	lsp "go.lsp.dev/protocol"
 	"go.lsp.dev/uri"
 	"github.com/zyedidia/micro/v2/internal/config"
 	"github.com/zyedidia/tcell/v2"
 	"github.com/zyedidia/micro/v2/internal/screen"
+	"gopkg.in/yaml.v2"
 )
 
-var activeServers map[string]*Server
+type STATE int
+
+const (
+	STATE_CREATED STATE = iota
+	STATE_INITIALIZED
+	STATE_RUNNING
+	STATE_RESTARTING
+)
+
+func (s STATE) String() string {
+	switch s {
+		case STATE_CREATED: return "created"
+		case STATE_INITIALIZED: return "initialized"
+		case STATE_RUNNING: return "running"
+		case STATE_RESTARTING: return "restarting"
+	}
+	return "unknown(" + fmt.Sprint(s) + ")"
+}
+
+func (s *Server) state_guard(states ...STATE) error {
+	for _, state := range states {
+		if s.State == state { return nil }
+	}
+
+	states_string := ""
+	last := len(states)-1
+	for i, state := range states {
+		if i != 0 && i != last {
+			states_string += ", "
+		} else if i != 0 && i == last {
+			states_string += " or "
+		}
+
+		states_string += state.String()
+	}
+
+	return errors.New("Expected state to be " + states_string + ", but " + s.language.Name + " is " + s.State.String())
+}
+
+var servers map[string]*Server
 var slock sync.Mutex
 
 func init() {
-	activeServers = make(map[string]*Server)
+	servers = make(map[string]*Server)
 }
 
-func GetServer(l Language, dir string) *Server {
-	s, ok := activeServers[l.Name+"-"+dir]
-	if ok && s.Active {
-		return s
+func getServer(l LSPConfig, dir string) *Server {
+	s, ok := servers[l.Name+"-"+dir]
+	if !ok { return nil }
+	return s
+}
+
+func GetOrStartServer(l LSPConfig, dir string, path string) *Server {
+	if !l.Valid_For(path) { return nil }
+
+	s := getServer(l, dir)
+	if s == nil {
+		var err error
+		s, err = startServer(l, dir)
+		if err == nil {
+			s.initialize()
+		} else {
+			log.Println(dir, l.Name, "failed to start server: ", err)
+		}
+	} else if s.State == STATE_CREATED {
+		s.runCommand()
+		s.initialize()
 	}
-	return nil
+
+	return s
 }
 
 func GetActiveServerNames() []string {
-	var servers []string
+	var activeServers []string
 
-	for server := range activeServers {
-		servers = append(servers, server)
+	for _, server := range servers {
+		if server.State != STATE_CREATED {
+			activeServers = append(activeServers, server.language.Name)
+		}
 	}
 
-	return servers
+	return activeServers
 }
 
 func ShutdownAllServers() {
-	for _, s := range activeServers {
-		if s.Active {
+	for _, s := range servers {
+		if s.State != STATE_CREATED {
 			s.Shutdown()
 		}
 	}
@@ -57,11 +118,11 @@ type Server struct {
 	cmd          *exec.Cmd
 	stdin        io.WriteCloser
 	stdout       *bufio.Reader
-	language     *Language
+	language     *LSPConfig
 	capabilities lsp.ServerCapabilities
 	root         string
 	lock         sync.Mutex
-	Active       bool
+	State        STATE
 	requestID    int
 	responses    map[int]chan ([]byte)
 	diagnostics  sync.Map
@@ -108,60 +169,77 @@ func env_to_strs(env map[string]string) []string {
 	return out
 }
 
+func (s *Server) runCommand() error {
+	if err := s.state_guard(STATE_CREATED) ; err != nil { return err }
+	if s.cmd != nil { return errors.New(s.language.Name + " is already running.") }
 
-func StartServer(l Language) (*Server, error) {
-	s := new(Server)
-
-	cwd, err := l.GetCwd()
-	if err != nil { return nil, err }
-	if len(cwd) == 0 { cwd, _ = os.Getwd() }
-
-	cmd, err := l.GetCmd(cwd)
-	if err != nil { return nil, err }
+	cmd, err := s.language.GetCmd(s.root)
+	if err != nil { return err }
 	c := exec.Command(cmd.tokens[0], cmd.tokens[1:]...)
 
 	var env = os.Environ()
-	add_env, err := l.GetEnv()
-	if err != nil { return nil, err }
+	add_env, err := s.language.GetEnv()
+	if err != nil { return err }
 
 	c.Env = append(env, env_to_strs(add_env)...)
-	c.Dir = cwd
+	c.Dir = s.root
 
 	c.Stderr = log.Writer()
 
 	stdin, err := c.StdinPipe()
 	if err != nil {
-		log.Println("[micro-lsp]", err)
-		return nil, err
+		s.Log(err)
+		return err
 	}
 
 	stdout, err := c.StdoutPipe()
 	if err != nil {
-		log.Println("[micro-lsp]", err)
-		return nil, err
+		s.Log(err)
+		return err
 	}
 
 	err = c.Start()
 	if err != nil {
-		log.Println("[micro-lsp]", err)
-		return nil, err
+		s.Log(err)
+		return err
 	}
 
 	s.cmd = c
 	s.stdin = stdin
 	s.stdout = bufio.NewReader(stdout)
+
+	return nil
+}
+
+func startServer(l LSPConfig, dir string) (*Server, error) {
+	s := new(Server)
+
+	cwd, err := l.GetCwd()
+	if err != nil { return nil, err }
+	if len(cwd) == 0 { cwd = dir }
+
+	s.root = cwd
 	s.language = &l
 	s.responses = make(map[int]chan []byte)
+
+	s.runCommand()
+	s.State = STATE_INITIALIZED
 
 	return s, nil
 }
 
-// Initialize performs the LSP initialization handshake
+func (s *Server) Log(args ...any) {
+	tp := []any{"[lsp: "+s.GetLanguage().Name+"]"}
+	tp = append(tp, args...)
+	log.Println(tp...)
+}
+
+// initialize performs the LSP initialization handshake
 // The directory must be an absolute path
-func (s *Server) Initialize(directory string) {
+func (s *Server) initialize() {
 	params := lsp.InitializeParams{
 		ProcessID: int32(os.Getpid()),
-		RootURI:   uri.File(directory),
+		RootURI:   uri.File(s.root),
 		Capabilities: lsp.ClientCapabilities{
 			Workspace: &lsp.WorkspaceClientCapabilities{
 				WorkspaceEdit: &lsp.WorkspaceClientCapabilitiesWorkspaceEdit{
@@ -182,7 +260,7 @@ func (s *Server) Initialize(directory string) {
 						DocumentationFormat:     []lsp.MarkupKind{lsp.PlainText},
 						DeprecatedSupport:       false,
 						PreselectSupport:        false,
-						InsertReplaceSupport:    true,
+						InsertReplaceSupport:    false,
 					},
 					ContextSupport: false,
 				},
@@ -199,9 +277,8 @@ func (s *Server) Initialize(directory string) {
 		},
 	}
 
-	activeServers[s.language.Name+"-"+directory] = s
-	s.Active = true
-	s.root = directory
+	servers[s.language.Name+"-"+s.root] = s
+	s.State = STATE_RUNNING
 
 	go s.receive()
 
@@ -209,29 +286,27 @@ func (s *Server) Initialize(directory string) {
 	go func() {
 		resp, err := s.sendRequest(lsp.MethodInitialize, params)
 		if err != nil {
-			log.Println("[micro-lsp]", err)
-			s.Active = false
+			s.Log(err)
+			s.Murder()
 			s.lock.Unlock()
 			return
 		}
 
 		// todo parse capabilities
-		log.Println("[micro-lsp] <<<", string(resp))
+		s.Log("<<<", string(resp))
 
 		var r RPCInit
 		json.Unmarshal(resp, &r)
 
 		s.lock.Unlock()
 		err = s.sendNotification(lsp.MethodInitialized, struct{}{})
-		if err != nil {
-			log.Println("[micro-lsp]", err)
-		}
+		if err != nil { s.Log(err) }
 
 		s.capabilities = r.Result.Capabilities
 	}()
 }
 
-func (s *Server) GetLanguage() *Language {
+func (s *Server) GetLanguage() *LSPConfig {
 	return s.language
 }
 
@@ -240,29 +315,60 @@ func (s *Server) GetCommand() *exec.Cmd {
 }
 
 func (s *Server) Shutdown() {
+	if s.state_guard(STATE_INITIALIZED, STATE_RUNNING) != nil { return }
 	s.sendRequest(lsp.MethodShutdown, nil)
 	s.sendNotification(lsp.MethodExit, nil)
-	s.Active = false
+	s.Murder()
+}
+
+func (s *Server) Murder() {
+	defer func() {
+		if err := recover(); err != nil {
+			str := string(debug.Stack())
+			log.Println("panic occurred:", err)
+			log.Println(str)
+		}
+	}()
+
+	s.State = STATE_CREATED
+	if s.cmd.ProcessState.ExitCode() == -1 {
+		s.cmd.Process.Kill()
+	}
+	s.cmd = nil
+}
+
+func (s *Server) Restart() {
+	if s.state_guard(STATE_INITIALIZED, STATE_RUNNING) != nil { return }
+	s.State = STATE_RESTARTING
+	s.sendRequest(lsp.MethodShutdown, nil)
+	s.sendNotification(lsp.MethodExit, nil)
+	s.Murder()
+	s.runCommand()
+	s.initialize()
 }
 
 func (s *Server) receive() {
-	for s.Active {
+	for s.State != STATE_CREATED {
 		resp, err := s.receiveMessage()
 		if err == io.EOF {
-			log.Println("Received EOF, shutting down")
-			s.Active = false
+			s.Log("Received EOF, shutting down")
+			s.Murder()
 			return
 		}
 		if err != nil {
-			log.Println("[micro-lsp,error]", err)
+			s.Log(err)
 			continue
 		}
-		log.Println("[micro-lsp] <<<", string(resp))
+
+		var out any
+		json.Unmarshal(resp, &out)
+		bytes, _ := yaml.Marshal(out)
+		s.Log("<<<", string(bytes))
 
 		var r RPCResult
 		err = json.Unmarshal(resp, &r)
 		if err != nil {
-			log.Println("[micro-lsp,error]", err)
+			s.Log(err)
 			continue
 		}
 
@@ -275,7 +381,7 @@ func (s *Server) receive() {
 			var diag RPCDiag
 			err = json.Unmarshal(resp, &diag)
 			if err != nil {
-				log.Println("[micro-lsp,error]", err)
+				s.Log(err)
 				continue
 			}
 			fileuri := uri.URI(string(diag.Params.URI))
@@ -283,7 +389,7 @@ func (s *Server) receive() {
 		case "":
 			// Response
 			if _, ok := s.responses[r.ID]; ok {
-				log.Println("[micro-lsp] Got response for", r.ID)
+				s.Log("Got response for", r.ID)
 				s.responses[r.ID] <- resp
 			}
 		}
@@ -332,6 +438,7 @@ func (s *Server) DiagnosticsCount(filename string) int {
 func (s *Server) receiveMessage() (outbyte []byte, err error) {
 	defer func() {
 		if r:= recover(); r != nil {
+			s.Log("Receive error:", r)
 			err = fmt.Errorf("pkg: %v", r)
 			outbyte = nil
 		} else {
@@ -342,22 +449,16 @@ func (s *Server) receiveMessage() (outbyte []byte, err error) {
 	n := -1
 	for {
 		b, err := s.stdout.ReadBytes('\n')
-		if err != nil {
-			return nil, err
-		}
+		if err != nil { s.Log(err) ; return nil, err }
+
 		headerline := strings.TrimSpace(string(b))
-		if len(headerline) == 0 {
-			break
-		}
+		if len(headerline) == 0 { break }
+
 		if strings.HasPrefix(headerline, "Content-Length:") {
 			split := strings.Split(headerline, ":")
-			if len(split) <= 1 {
-				break
-			}
+			if len(split) <= 1 { break }
 			n, err = strconv.Atoi(strings.TrimSpace(split[1]))
-			if err != nil {
-				return nil, err
-			}
+			if err != nil { s.Log(err) ; return nil, err }
 		}
 	}
 
@@ -367,13 +468,15 @@ func (s *Server) receiveMessage() (outbyte []byte, err error) {
 
 	outbyte = make([]byte, n)
 	_, err = io.ReadFull(s.stdout, outbyte)
-	if err != nil {
-		log.Println("[micro-lsp]", err)
-	}
+	if err != nil { s.Log(err) }
 	return outbyte, err
 }
 
 func (s *Server) sendNotification(method string, params interface{}) error {
+	if err := s.state_guard(STATE_INITIALIZED, STATE_RUNNING, STATE_RESTARTING) ; err != nil {
+		return err
+	}
+
 	m := RPCNotification{
 		RPCVersion: "2.0",
 		Method:     method,
@@ -386,6 +489,10 @@ func (s *Server) sendNotification(method string, params interface{}) error {
 }
 
 func (s *Server) sendRequest(method string, params interface{}) ([]byte, error) {
+	if err := s.state_guard(STATE_INITIALIZED, STATE_RUNNING, STATE_RESTARTING) ; err != nil {
+		return nil, err
+	}
+
 	id := s.requestID
 	s.requestID++
 	r := make(chan []byte)
@@ -400,6 +507,7 @@ func (s *Server) sendRequest(method string, params interface{}) ([]byte, error) 
 
 	err := s.sendMessage(m)
 	if err != nil {
+		s.Log(err)
 		return nil, err
 	}
 
@@ -411,6 +519,8 @@ func (s *Server) sendRequest(method string, params interface{}) ([]byte, error) 
 	}
 	delete(s.responses, id)
 
+	if err != nil { s.Log(err) }
+
 	return bytes, err
 }
 
@@ -420,7 +530,7 @@ func (s *Server) sendMessage(m interface{}) error {
 		return err
 	}
 
-	log.Println("[micro-lsp] >>>", string(msg))
+	s.Log(">>>", string(msg))
 
 	// encode header and proper line endings
 	msg = append(msg, '\r', '\n')
