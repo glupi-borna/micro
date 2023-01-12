@@ -519,9 +519,10 @@ func (b *Buffer) lspInit() {
 func (b *Buffer) LSPRestart() {
 	var wg sync.WaitGroup
 	for _, s := range b.Servers {
+		server := s
 		wg.Add(1)
 		go func() {
-			s.Restart()
+			server.Restart()
 			wg.Done()
 		}()
 	}

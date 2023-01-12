@@ -366,8 +366,6 @@ var DefaultGlobalOnlySettings = map[string]interface{}{
 	"pluginrepos":    []string{},
 	"savehistory":    true,
 	"sucmd":          "sudo",
-	"tabhighlight":   false,
-	"tabreverse":     true,
 	"xterm":          false,
 }
 

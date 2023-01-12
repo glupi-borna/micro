@@ -15,7 +15,7 @@ require (
 	github.com/zyedidia/glob v0.0.0-20170209203856-dd4023a66dc3
 	github.com/zyedidia/json5 v0.0.0-20200102012142-2da050b1a98d
 	github.com/zyedidia/pty v1.1.20 // indirect
-	github.com/zyedidia/tcell/v2 v2.0.10-0.20221007181625-f562052bccb8 // indirect
+	github.com/zyedidia/tcell/v2 v2.0.10-0.20221007181625-f562052bccb8
 	github.com/zyedidia/terminal v0.0.0-20180726154117-533c623e2415
 	go.lsp.dev/protocol v0.12.0
 	go.lsp.dev/uri v0.3.0
@@ -34,7 +34,6 @@ require (
 	github.com/segmentio/encoding v0.3.5 // indirect
 	github.com/xo/terminfo v0.0.0-20200218205459-454e5b68f9e8 // indirect
 	github.com/zyedidia/poller v1.0.1 // indirect
-	github.com/zyedidia/pty v1.1.15 // indirect
 	go.lsp.dev/jsonrpc2 v0.10.0 // indirect
 	go.lsp.dev/pkg v0.0.0-20210717090340-384b27a52fb2 // indirect
 	go.uber.org/atomic v1.9.0 // indirect

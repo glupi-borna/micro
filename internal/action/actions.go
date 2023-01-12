@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 	"time"
+	"strconv"
 
 
 	shellquote "github.com/kballard/go-shellquote"
@@ -18,7 +19,9 @@ import (
 	"github.com/zyedidia/micro/v2/internal/screen"
 	"github.com/zyedidia/micro/v2/internal/shell"
 	"github.com/zyedidia/micro/v2/internal/util"
+	"github.com/zyedidia/micro/v2/internal/lsp"
 	"github.com/zyedidia/tcell/v2"
+	"go.lsp.dev/protocol"
 )
 
 // ScrollUp is not an action
@@ -56,45 +59,8 @@ func (h *BufPane) MousePress(e *tcell.EventMouse) bool {
 		return false
 	}
 
-	gutterOffset := 1
-	if b.Settings["diffgutter"].(bool) {
-		gutterOffset++
-	}
-	if b.Settings["ruler"].(bool) {
-		gutterOffset += len(strconv.Itoa(b.LinesNum()))
-	}
-
-	isInGutter := mx < gutterOffset
-
 	mouseLoc := h.LocFromVisual(buffer.Loc{mx, my})
 	h.Cursor.Loc = mouseLoc
-
-	if h.mouseReleased {
-		b.HasSuggestions = false
-		b.HasTooltip = false
-
-		if isInGutter {
-			markExists := false
-			removeMessages := []int{}
-			for i, m := range b.Messages {
-				if m.Kind == buffer.MTMark {
-					if m.Start.Y == mouseLoc.Y {
-						markExists = true
-						removeMessages = append(removeMessages, i)
-					}
-				}
-			}
-			for _, i := range removeMessages {
-				b.RemoveMessage(i)
-			}
-			if !markExists {
-				mark := buffer.NewMessageAtLine("breakpoint", "", mouseLoc.Y + 1, buffer.MTMark)
-				b.AddMessage(mark)
-			}
-
-			return true
-		}
-	}
 
 	if b.NumCursors() > 1 {
 		b.ClearCursors()
@@ -170,6 +136,45 @@ func (h *BufPane) MouseRelease(e *tcell.EventMouse) bool {
 	// 	h.Cursor.Loc = h.LocFromVisual(buffer.Loc{mx, my})
 	// 	h.Cursor.SetSelectionEnd(h.Cursor.Loc)
 	// }
+	b := h.Buf
+
+	gutterOffset := 1
+	if b.Settings["diffgutter"].(bool) {
+		gutterOffset++
+	}
+	if b.Settings["ruler"].(bool) {
+		gutterOffset += len(strconv.Itoa(b.LinesNum()))
+	}
+
+	mx, my := e.Position()
+
+	isInGutter := mx < gutterOffset
+	mouseLoc := h.LocFromVisual(buffer.Loc{mx, my})
+
+	b.HasSuggestions = false
+	b.HasTooltip = false
+
+	if isInGutter {
+		markExists := false
+		removeMessages := []int{}
+		for i, m := range b.Messages {
+			if m.Kind == buffer.MTMark {
+				if m.Start.Y == mouseLoc.Y {
+					markExists = true
+					removeMessages = append(removeMessages, i)
+				}
+			}
+		}
+		for _, i := range removeMessages {
+			b.RemoveMessage(i)
+		}
+		if !markExists {
+			mark := buffer.NewMessageAtLine("breakpoint", "", mouseLoc.Y + 1, buffer.MTMark)
+			b.AddMessage(mark)
+		}
+
+		return true
+	}
 
 	if h.Cursor.HasSelection() {
 		h.Cursor.CopySelection(clipboard.PrimaryReg)
@@ -778,6 +783,13 @@ func (h *BufPane) Autocomplete() bool {
 		return false
 	}
 
+	// if there is an existing completion, always cycle it
+	if b.HasSuggestions {
+		h.cycleAutocomplete(true)
+		return true
+	}
+
+	// don't start a new completion unless the correct conditions are met
 	if h.Cursor.X == 0 {
 		return false
 	}
@@ -788,11 +800,26 @@ func (h *BufPane) Autocomplete() bool {
 		return false
 	}
 
-	if b.HasSuggestions {
-		b.CycleAutocomplete(true)
-		return true
+	ret := true
+	if !b.Autocomplete(buffer.LSPComplete) {
+		ret = b.Autocomplete(buffer.BufferComplete)
 	}
-	return b.Autocomplete(buffer.BufferComplete)
+	if ret {
+		h.displayCompletionDoc()
+	}
+	return true
+}
+
+func (h *BufPane) cycleAutocomplete(forward bool) {
+	h.Buf.CycleAutocomplete(forward)
+	h.displayCompletionDoc()
+}
+
+func (h *BufPane) displayCompletionDoc() {
+	c := h.Buf.CurCompletion
+	if c >= 0 && c < len(h.Buf.Completions) {
+		InfoBar.Message(h.Buf.Completions[c].Doc)
+	}
 }
 
 // CycleAutocompleteBack cycles back in the autocomplete suggestion list
@@ -802,7 +829,7 @@ func (h *BufPane) CycleAutocompleteBack() bool {
 	}
 
 	if h.Buf.HasSuggestions {
-		h.Buf.CycleAutocomplete(false)
+		h.cycleAutocomplete(false)
 		return true
 	}
 	return false
@@ -1927,6 +1954,145 @@ func (h *BufPane) RemoveAllMultiCursors() bool {
 	h.Buf.ClearCursors()
 	h.multiWord = false
 	h.Relocate()
+	return true
+}
+
+func (h *BufPane) Tooltip() bool {
+	tip, err := h.Buf.LSPHover()
+	if err != nil {
+		InfoBar.Error(err)
+		return false
+	}
+
+	if len(tip) > 0 {
+		h.Buf.TooltipLines = tip
+		h.Buf.HasTooltip = true
+		h.Buf.HasSuggestions = false
+	} else {
+		h.Buf.TooltipLines = nil
+		h.Buf.HasTooltip = false
+		h.Buf.HasSuggestions = false
+	}
+
+	return true
+}
+
+func (h *BufPane) Rename() bool {
+	b := h.Buf
+	rename_symbol, server, err := b.GetRenameSymbol()
+
+	if err != nil {
+		InfoBar.Error(err)
+		return false
+	}
+
+	InfoBar.Prompt(
+		"Rename: " + rename_symbol + " -> ", rename_symbol, "Rename", nil,
+		func(new_name string, canceled bool) {
+			if canceled { return }
+
+			new_name = strings.TrimSpace(new_name)
+			if new_name == "" {
+				InfoBar.Error("Cannot rename with empty string!")
+				return
+			}
+
+			if server == nil {
+				h.ReplaceAllCmd([]string{ rename_symbol, new_name, "-l" })
+			} else {
+				res, err := server.RenameSymbol(b.AbsPath, b.GetActiveCursor().ToPos(), new_name)
+				if err != nil {
+					InfoBar.Error(err)
+					return
+				}
+				if (len(res.Changes) + len(res.DocumentChanges)) == 0 {
+					InfoBar.Error("Cannot rename '" + rename_symbol + "'")
+					return
+				}
+				h.ApplyWorkspaceEdits(res)
+			}
+		},
+	)
+
+	return true
+}
+
+func FindBuffer(absPath string) *buffer.Buffer {
+	for _, b := range buffer.OpenBuffers {
+		if b.AbsPath == absPath {
+			return b
+		}
+	}
+	return nil
+}
+
+func (h *BufPane) ApplyWorkspaceEdits(edit protocol.WorkspaceEdit) {
+	for uri, edits := range edit.Changes {
+		b := FindBuffer(uri.Filename())
+		if b == nil { continue }
+		b.ApplyEdits(edits)
+	}
+
+	width, height := screen.Screen.Size()
+	iOffset := config.GetInfoBarOffset()
+
+	for _, change := range edit.DocumentChanges {
+		fn := change.TextDocument.URI.Filename()
+		b := FindBuffer(fn)
+		if b == nil {
+			var err error
+			b, err = buffer.NewBufferFromFile(fn, buffer.BTDefault)
+			if err != nil {
+				InfoBar.Error(err)
+				continue
+			}
+
+			new_tab := NewTabFromBuffer(0, 0, width, height-1-iOffset, b)
+			Tabs.AddTab(new_tab)
+		}
+		b.ApplyEdits(change.Edits)
+	}
+}
+
+// AutoFormat automatically formats the document using LSP
+func (h *BufPane) AutoFormat() bool {
+	if !h.Buf.HasLSP() {
+		return false
+	}
+
+	var err error
+	var edits []protocol.TextEdit
+
+	fmtopt := protocol.FormattingOptions{
+		InsertSpaces: h.Buf.Settings["tabstospaces"].(bool),
+		TabSize:      h.Buf.Settings["tabsize"].(uint32),
+	}
+
+	if h.Cursor.HasSelection() {
+		prange := protocol.Range{
+			Start: h.Cursor.CurSelection[0].ToPos(),
+			End:   h.Cursor.CurSelection[1].ToPos(),
+		}
+
+		edits = util.Fold(util.ChanMapAll(h.Buf.Servers, func (s *lsp.Server) ([]protocol.TextEdit, bool) {
+			res, e := s.DocumentRangeFormat(h.Buf.AbsPath, prange, fmtopt)
+			if e == nil { return res, true }
+			return nil, false
+		})...)
+	} else {
+		edits = util.Fold(util.ChanMapAll(h.Buf.Servers, func (s *lsp.Server) ([]protocol.TextEdit, bool) {
+			res, e := s.DocumentFormat(h.Buf.AbsPath, fmtopt)
+			if e == nil { return res, true }
+			return nil, false
+		})...)
+	}
+
+	if err != nil {
+		InfoBar.Error(err)
+		return false
+	}
+
+	h.Buf.ApplyEdits(edits)
 	return true
 }
 
