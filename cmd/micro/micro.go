@@ -27,6 +27,7 @@ import (
 	"github.com/zyedidia/micro/v2/internal/shell"
 	"github.com/zyedidia/micro/v2/internal/util"
 	"github.com/zyedidia/tcell/v2"
+	"reflect"
 )
 
 var (
@@ -222,6 +223,8 @@ func LoadInput(args []string) []*buffer.Buffer {
 }
 
 func main() {
+	timer := util.NewTimer()
+
 	defer func() {
 		lsp.ShutdownAllServers()
 
@@ -239,28 +242,34 @@ func main() {
 	var err error
 
 	InitFlags()
-
 	InitLog()
+
+	timer.Tick("Flags & Log")
 
 	err = config.InitConfigDir(*flagConfigDir)
 	if err != nil {
 		screen.TermMessage(err)
 	}
+	timer.Tick("InitConfig")
 
 	config.InitRuntimeFiles()
 	err = config.ReadSettings()
 	if err != nil {
 		screen.TermMessage(err)
 	}
+	timer.Tick("InitRuntime")
+
 	err = config.InitGlobalSettings()
 	if err != nil {
 		screen.TermMessage(err)
 	}
+	timer.Tick("InitGlobalSettings")
 
 	err = lsp.Init()
 	if err != nil {
 		screen.TermMessage(err)
 	}
+	timer.Tick("InitLSP")
 
 	// flag options
 	for k, v := range optionFlags {
@@ -275,6 +284,7 @@ func main() {
 	}
 
 	DoPluginFlags()
+	timer.Tick("PluginFlags")
 
 	err = screen.Init()
 	if err != nil {
@@ -284,6 +294,7 @@ func main() {
 	}
 	m := clipboard.SetMethod(config.GetGlobalOption("clipboard").(string))
 	clipErr := clipboard.Initialize(m)
+	timer.Tick("Screen & Clipboard")
 
 	defer func() {
 		if err := recover(); err != nil {
@@ -307,22 +318,28 @@ func main() {
 	if err != nil {
 		screen.TermMessage(err)
 	}
+	timer.Tick("Load plugins")
 
 	action.InitBindings()
 	action.InitCommands()
+	timer.Tick("Bindings & Commands")
 
 	err = config.InitColorscheme()
 	if err != nil {
 		screen.TermMessage(err)
 	}
+	timer.Tick("ColorScheme")
 
 	err = config.RunPluginFn("preinit")
 	if err != nil {
 		screen.TermMessage(err)
 	}
+	timer.Tick("Preinit")
 
 	action.InitGlobals()
 	buffer.SetMessager(action.InfoBar)
+	timer.Tick("Globals")
+
 	args := flag.Args()
 	b := LoadInput(args)
 
@@ -331,18 +348,22 @@ func main() {
 		screen.Screen.Fini()
 		runtime.Goexit()
 	}
+	timer.Tick("Load Input")
 
 	action.InitTabs(b)
+	timer.Tick("Init tabs")
 
 	err = config.RunPluginFn("init")
 	if err != nil {
 		screen.TermMessage(err)
 	}
+	timer.Tick("initfn")
 
 	err = config.RunPluginFn("postinit")
 	if err != nil {
 		screen.TermMessage(err)
 	}
+	timer.Tick("postinit")
 
 	if clipErr != nil {
 		log.Println(clipErr, " or change 'clipboard' option")
@@ -371,6 +392,7 @@ func main() {
 			}
 		}
 	}()
+	timer.Tick("signals")
 
 	// clear the drawchan so we don't redraw excessively
 	// if someone requested a redraw before we started displaying
@@ -385,6 +407,7 @@ func main() {
 	case <-time.After(10 * time.Millisecond):
 		// time out after 10ms
 	}
+	timer.Tick("Initial stuff")
 
 	for {
 		DoEvent()
@@ -393,18 +416,31 @@ func main() {
 
 // DoEvent runs the main action loop of the editor
 func DoEvent() {
+	timer := util.NewTimer()
 	var event tcell.Event
+
+	timer.Tick("Immediate")
 
 	// Display everything
 	screen.Screen.Fill(' ', config.DefStyle)
+	timer.Tick("Fill")
 	screen.Screen.HideCursor()
+	timer.Tick("Hide")
 	action.Tabs.Display()
+	timer.Tick("Display1")
 	for _, ep := range action.MainTab().Panes {
+		ty := reflect.TypeOf(ep)
+		log.Println(ep.Name(), ty, ty.Name())
 		ep.Display()
 	}
+	timer.Tick("Display2")
 	action.MainTab().Display()
+	timer.Tick("Display3")
 	action.InfoBar.Display()
+	timer.Tick("Display4")
 	screen.Screen.Show()
+
+	timer.Tick("Draw")
 
 	// Check for new events
 	select {
@@ -454,4 +490,6 @@ func DoEvent() {
 	}
 	// }
 	ulua.Lock.Unlock()
+
+	timer.Tick("Event: " + fmt.Sprint(event))
 }

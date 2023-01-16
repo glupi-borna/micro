@@ -6,6 +6,7 @@ import (
 
 	lua "github.com/yuin/gopher-lua"
 	ulua "github.com/zyedidia/micro/v2/internal/lua"
+	"github.com/zyedidia/micro/v2/internal/util"
 )
 
 // ErrNoSuchFunction is returned when Call is executed on a function that does not exist
@@ -26,6 +27,9 @@ func LoadAllPlugins() error {
 // RunPluginFn runs a given function in all plugins
 // returns an error if any of the plugins had an error
 func RunPluginFn(fn string, args ...lua.LValue) error {
+	timer := util.NewTimer()
+	defer timer.Tick(fn)
+
 	var reterr error
 	for _, p := range Plugins {
 		if !p.IsEnabled() {
@@ -43,6 +47,9 @@ func RunPluginFn(fn string, args ...lua.LValue) error {
 // false if any one of them returned false
 // also returns an error if any of the plugins had an error
 func RunPluginFnBool(fn string, args ...lua.LValue) (bool, error) {
+	timer := util.NewTimer()
+	defer timer.Tick(fn + " bool")
+
 	var reterr error
 	retbool := true
 	for _, p := range Plugins {

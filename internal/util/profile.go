@@ -9,6 +9,21 @@ import (
 	humanize "github.com/dustin/go-humanize"
 )
 
+type Timer struct {
+	start time.Time
+}
+
+func NewTimer() Timer {
+	t := time.Now()
+	return Timer{t}
+}
+
+func (t *Timer) Tick(message string) {
+	end := time.Now()
+	log.Println(message, end.Sub(t.start).Milliseconds(), "ms")
+	t.start = end
+}
+
 // GetMemStats returns a string describing the memory usage and gc time used so far
 func GetMemStats() string {
 	var memstats runtime.MemStats
@@ -25,3 +40,4 @@ func Toc(start time.Time) {
 	end := time.Now()
 	log.Println("END: ElapsedTime in seconds:", end.Sub(start))
 }
+

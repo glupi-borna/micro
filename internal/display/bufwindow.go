@@ -1145,7 +1145,6 @@ func (w *BufWindow) displayTooltip() {
 // Display displays the buffer and the statusline
 func (w *BufWindow) Display() {
 	w.updateDisplayInfo()
-
 	w.displayStatusLine()
 	w.displayScrollBar()
 	w.displayBuffer()
