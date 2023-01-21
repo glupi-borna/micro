@@ -20,7 +20,7 @@ type BufWindow struct {
 	// Buffer being shown in this window
 	Buf         *buffer.Buffer
 	completeBox buffer.Loc
-	tooltipBox buffer.Loc
+	tooltipBox  buffer.Loc
 
 	active bool
 
@@ -1150,4 +1150,29 @@ func (w *BufWindow) Display() {
 	w.displayBuffer()
 	w.displayCompleteBox()
 	w.displayTooltip()
+}
+
+func (w *BufWindow) VisualScrollOffset() Loc {
+	return Loc{
+		X: -w.StartCol,
+		Y: -w.StartLine.Line -w.StartLine.Row,
+	}
+}
+
+func (w *BufWindow) LocToVisual(X, Y int) buffer.Loc {
+	l := buffer.Loc{X, Y}
+	vloc := w.VLocFromLoc(l)
+	soff := w.VisualScrollOffset()
+
+	// (window x) + (cursor visual offset (softwrap)) + (gutter) + (scroll)
+	l.X = w.X + vloc.VisualX + w.gutterOffset + soff.X
+	// (window y) + (line offset) + (row offset (softwrap)) + (scroll)
+	l.Y = w.Y + vloc.Line + vloc.Row + soff.Y
+
+	return l
+}
+
+func (w *BufWindow) CursorVisual() buffer.Loc {
+	cl := w.Buf.GetActiveCursor().Loc
+	return w.LocToVisual(cl.X, cl.Y)
 }

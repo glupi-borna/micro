@@ -50,7 +50,7 @@ func (w *TabWindow) LocFromVisual(vloc buffer.Loc) int {
 func (w *TabWindow) Scroll(amt int) {
 	w.hscroll += amt
 	s := w.TotalSize()
-	w.hscroll = util.Clamp(w.hscroll, 0, s-w.Width)
+	w.hscroll = util.Clamp(w.hscroll, 0, s-w.Width+4)
 
 	if s-w.Width <= 0 {
 		w.hscroll = 0
@@ -62,7 +62,7 @@ func (w *TabWindow) TotalSize() int {
 	for _, n := range w.Names {
 		sum += runewidth.StringWidth(n) + 3
 	}
-	return sum - 4
+	return sum - 5
 }
 
 func (w *TabWindow) Active() int {
@@ -78,9 +78,9 @@ func (w *TabWindow) SetActive(a int) {
 		c := util.CharacterCountInString(n)
 		if i == a {
 			if x+c >= w.hscroll+w.Width {
-				w.hscroll = util.Clamp(x+c+1-w.Width, 0, s-w.Width)
+				w.hscroll = util.Clamp(x+c+1-w.Width, 0, s-w.Width+4)
 			} else if x < w.hscroll {
-				w.hscroll = util.Clamp(x-4, 0, s-w.Width)
+				w.hscroll = util.Clamp(x-4, 0, s-w.Width+4)
 			}
 			break
 		}
@@ -117,12 +117,15 @@ func (w *TabWindow) Display() {
 				if j > 0 {
 					c = ' '
 				}
-				if x == w.Width-1 && !done {
-					screen.SetContent(w.Width-1, w.Y, '>', nil, tabBarStyle)
-					x++
+				if x == w.Width-2 && !done {
+					screen.SetContent(w.Width-2, w.Y, ' ', nil, tabBarStyle)
+					screen.SetContent(w.Width-1, w.Y, '⮞', nil, tabBarInactiveStyle)
+					x += 2
 					break
 				} else if x == 0 && w.hscroll > 0 {
-					screen.SetContent(0, w.Y, '<', nil, tabBarStyle)
+					screen.SetContent(1, w.Y, ' ', nil, tabBarStyle)
+					screen.SetContent(0, w.Y, '⮜', nil, tabBarInactiveStyle)
+					x++
 				} else if x >= 0 && x < w.Width {
 					screen.SetContent(x, w.Y, c, nil, style)
 				}
@@ -147,7 +150,7 @@ func (w *TabWindow) Display() {
 			}
 			if i == len(w.Names)-1 { done = true }
 			draw(' ', 1, tabBarInactiveStyle)
-			draw(' ', 1, tabBarStyle)
+			if !done { draw(' ', 1, tabBarStyle) }
 		}
 		if x >= w.Width {
 			break

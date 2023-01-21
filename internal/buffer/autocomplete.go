@@ -9,6 +9,7 @@ import (
 
 	"github.com/zyedidia/micro/v2/internal/util"
 	"github.com/zyedidia/micro/v2/internal/lsp"
+
 	"go.lsp.dev/protocol"
 )
 

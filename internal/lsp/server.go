@@ -19,7 +19,6 @@ import (
 	"github.com/zyedidia/micro/v2/internal/config"
 	"github.com/zyedidia/tcell/v2"
 	"github.com/zyedidia/micro/v2/internal/screen"
-	"gopkg.in/yaml.v2"
 )
 
 type STATE int
@@ -222,7 +221,8 @@ func startServer(l LSPConfig, dir string) (*Server, error) {
 	s.language = &l
 	s.responses = make(map[int]chan []byte)
 
-	s.runCommand()
+	err = s.runCommand()
+	if err != nil { return nil, err }
 	s.State = STATE_INITIALIZED
 
 	return s, nil
@@ -360,10 +360,7 @@ func (s *Server) receive() {
 			continue
 		}
 
-		var out any
-		json.Unmarshal(resp, &out)
-		bytes, _ := yaml.Marshal(out)
-		s.Log("<<<", string(bytes))
+		s.Log("<<<", resp)
 
 		var r RPCResult
 		err = json.Unmarshal(resp, &r)

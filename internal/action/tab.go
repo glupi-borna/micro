@@ -285,11 +285,7 @@ func (t *Tab) HandleEvent(event tcell.Event) {
 func (t *Tab) SetActive(i int) {
 	t.active = i
 	for j, p := range t.Panes {
-		if j == i {
-			p.SetActive(true)
-		} else {
-			p.SetActive(false)
-		}
+		p.SetActive(j == i)
 	}
 }
 
