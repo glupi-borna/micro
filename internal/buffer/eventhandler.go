@@ -10,8 +10,12 @@ import (
 	ulua "github.com/zyedidia/micro/v2/internal/lua"
 	"github.com/zyedidia/micro/v2/internal/screen"
 	"github.com/zyedidia/micro/v2/internal/util"
+	"github.com/zyedidia/micro/v2/internal/loc"
 	luar "layeh.com/gopher-luar"
 )
+
+var clamp = loc.Clamp
+var DiffLA = loc.DiffLA
 
 const (
 	// Opposite and undoing events must have opposite values

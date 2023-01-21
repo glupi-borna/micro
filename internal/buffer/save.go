@@ -109,10 +109,11 @@ func (b *Buffer) saveToFile(filename string, withSudo bool) error {
 	}
 
 	if b.Settings["rmtrailingws"].(bool) {
-		for i, l := range b.lines {
-			leftover := util.CharacterCount(bytes.TrimRightFunc(l.data, unicode.IsSpace))
+		for i := 0 ; i < b.Len() ; i++ {
+			l := b.LineArray.Line(i)
+			leftover := util.CharacterCount(bytes.TrimRightFunc(l, unicode.IsSpace))
 
-			linelen := util.CharacterCount(l.data)
+			linelen := util.CharacterCount(l)
 			b.Remove(Loc{leftover, i}, Loc{linelen, i})
 		}
 
@@ -160,9 +161,7 @@ func (b *Buffer) saveToFile(filename string, withSudo bool) error {
 	}
 
 	fwriter := func(file io.Writer) (e error) {
-		if len(b.lines) == 0 {
-			return
-		}
+		if b.Len() == 0 { return }
 
 		// end of line
 		var eol []byte
@@ -173,18 +172,17 @@ func (b *Buffer) saveToFile(filename string, withSudo bool) error {
 		}
 
 		// write lines
-		if fileSize, e = file.Write(b.lines[0].data); e != nil {
-			return
-		}
+		if fileSize, e = file.Write(b.LineArray.Line(0)); e != nil { return }
 
-		for _, l := range b.lines[1:] {
+		for i := 1 ; i < b.Len() ; i++ {
 			if _, e = file.Write(eol); e != nil {
 				return
 			}
-			if _, e = file.Write(l.data); e != nil {
+			l := b.LineArray.Line(i)
+			if _, e = file.Write(l); e != nil {
 				return
 			}
-			fileSize += len(eol) + len(l.data)
+			fileSize += len(eol) + len(l)
 		}
 		return
 	}

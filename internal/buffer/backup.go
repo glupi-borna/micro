@@ -11,8 +11,11 @@ import (
 	"github.com/zyedidia/micro/v2/internal/config"
 	"github.com/zyedidia/micro/v2/internal/screen"
 	"github.com/zyedidia/micro/v2/internal/util"
+	"github.com/zyedidia/micro/v2/internal/linearray"
 	"golang.org/x/text/encoding"
 )
+
+var NewLineArray = linearray.NewLineArray
 
 const backupMsg = `A backup was detected for this file. This likely means that micro
 crashed while editing this file, or another instance of micro is currently
@@ -80,7 +83,7 @@ func (b *Buffer) Backup() error {
 	name := filepath.Join(backupdir, util.EscapePath(b.AbsPath))
 
 	err = overwriteFile(name, encoding.Nop, func(file io.Writer) (e error) {
-		if len(b.lines) == 0 {
+		if b.Len() == 0 {
 			return
 		}
 
@@ -88,15 +91,16 @@ func (b *Buffer) Backup() error {
 		eol := []byte{'\n'}
 
 		// write lines
-		if _, e = file.Write(b.lines[0].data); e != nil {
+		if _, e = file.Write(b.LineArray.Line(0)); e != nil {
 			return
 		}
 
-		for _, l := range b.lines[1:] {
+		for i := 0 ; i < b.Len() ; i++ {
 			if _, e = file.Write(eol); e != nil {
 				return
 			}
-			if _, e = file.Write(l.data); e != nil {
+			l := b.LineArray.Line(i)
+			if _, e = file.Write(l); e != nil {
 				return
 			}
 		}

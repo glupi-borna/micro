@@ -1,4 +1,4 @@
-package buffer
+package linearray
 
 import (
 	"bufio"
@@ -7,8 +7,18 @@ import (
 	"sync"
 
 	"github.com/zyedidia/micro/v2/internal/util"
+	"github.com/zyedidia/micro/v2/internal/loc"
 	"github.com/zyedidia/micro/v2/pkg/highlight"
 )
+
+type Loc = loc.Loc
+
+type Buffer interface {
+	GetLastSearch() string
+	GetLastSearchRegex() bool
+	GetSetting(name string) (any, bool)
+	FindNext(s string, start, end, from Loc, down bool, useRegex bool) ([2]Loc, bool, error)
+}
 
 // Finds the byte index of the nth rune in a byte slice
 func runeToByteIndex(n int, txt []byte) int {
@@ -57,7 +67,7 @@ type Line struct {
 	// (multiple instances of the same file opened in different edit panes)
 	// which have distinct searches, so in the general case there are multiple
 	// searches per a line, one search per a Buffer containing this line.
-	search map[*Buffer]*searchState
+	search map[Buffer]*searchState
 }
 
 const (
@@ -75,6 +85,18 @@ type LineArray struct {
 	lines    []Line
 	Endings  FileFormat
 	initsize uint64
+}
+
+func (la *LineArray) Len() int {
+	return len(la.lines)
+}
+
+func (la *LineArray) Line(n int) []byte {
+	return la.lines[n].data
+}
+
+func (la *LineArray) SetLineData(n int, data []byte) {
+	la.lines[n].data = data
 }
 
 // Append efficiently appends lines together
@@ -205,7 +227,7 @@ func (la *LineArray) newlineBelow(y int) {
 }
 
 // Inserts a byte array at a given location
-func (la *LineArray) insert(pos Loc, value []byte) {
+func (la *LineArray) Insert(pos Loc, value []byte) {
 	x, y := runeToByteIndex(pos.X, la.lines[pos.Y].data), pos.Y
 	for i := 0; i < len(value); i++ {
 		if value[i] == '\n' || (value[i] == '\r' && i < len(value)-1 && value[i+1] == '\n') {
@@ -233,14 +255,14 @@ func (la *LineArray) insertByte(pos Loc, value byte) {
 
 // joinLines joins the two lines a and b
 func (la *LineArray) joinLines(a, b int) {
-	la.insert(Loc{len(la.lines[a].data), a}, la.lines[b].data)
+	la.Insert(Loc{len(la.lines[a].data), a}, la.lines[b].data)
 	la.deleteLine(b)
 }
 
 // split splits a line at a given position
 func (la *LineArray) split(pos Loc) {
 	la.newlineBelow(pos.Y)
-	la.insert(Loc{0, pos.Y + 1}, la.lines[pos.Y].data[pos.X:])
+	la.Insert(Loc{0, pos.Y + 1}, la.lines[pos.Y].data[pos.X:])
 	la.lines[pos.Y+1].state = la.lines[pos.Y].state
 	la.lines[pos.Y].state = nil
 	la.lines[pos.Y].match = nil
@@ -250,7 +272,7 @@ func (la *LineArray) split(pos Loc) {
 }
 
 // removes from start to end
-func (la *LineArray) remove(start, end Loc) []byte {
+func (la *LineArray) Remove(start, end Loc) []byte {
 	sub := la.Substr(start, end)
 	startX := runeToByteIndex(start.X, la.lines[start.Y].data)
 	endX := runeToByteIndex(end.X, la.lines[end.Y].data)
@@ -386,14 +408,16 @@ func (la *LineArray) SetRehighlight(lineN int, on bool) {
 // between multiple buffers (multiple instances of the same file opened
 // in different edit panes) which have distinct searches, so SearchMatch
 // needs to know which search to match against.
-func (la *LineArray) SearchMatch(b *Buffer, pos Loc) bool {
-	if b.LastSearch == "" {
+func (la *LineArray) SearchMatch(b Buffer, pos Loc) bool {
+	last_search := b.GetLastSearch()
+	if last_search == "" {
 		return false
 	}
+	last_search_regex := b.GetLastSearchRegex()
 
 	lineN := pos.Y
 	if la.lines[lineN].search == nil {
-		la.lines[lineN].search = make(map[*Buffer]*searchState)
+		la.lines[lineN].search = make(map[Buffer]*searchState)
 	}
 	s, ok := la.lines[lineN].search[b]
 	if !ok {
@@ -404,11 +428,18 @@ func (la *LineArray) SearchMatch(b *Buffer, pos Loc) bool {
 		s = new(searchState)
 		la.lines[lineN].search[b] = s
 	}
-	if !ok || s.search != b.LastSearch || s.useRegex != b.LastSearchRegex ||
-		s.ignorecase != b.Settings["ignorecase"].(bool) {
-		s.search = b.LastSearch
-		s.useRegex = b.LastSearchRegex
-		s.ignorecase = b.Settings["ignorecase"].(bool)
+
+	searchDiff := s.search != last_search
+	regexDiff := s.useRegex != last_search_regex
+	ics, ok := b.GetSetting("ignorecase")
+	ignorecase_setting := s.ignorecase
+	if ok { ignorecase_setting = ics.(bool) }
+	icDiff := s.ignorecase != ignorecase_setting
+
+	if !ok || searchDiff || regexDiff || icDiff {
+		s.search = last_search
+		s.useRegex = last_search_regex
+		s.ignorecase = ignorecase_setting
 		s.done = false
 	}
 
@@ -417,7 +448,7 @@ func (la *LineArray) SearchMatch(b *Buffer, pos Loc) bool {
 		start := Loc{0, lineN}
 		end := Loc{util.CharacterCount(la.lines[lineN].data), lineN}
 		for start.X < end.X {
-			m, found, _ := b.FindNext(b.LastSearch, start, end, start, true, b.LastSearchRegex)
+			m, found, _ := b.FindNext(last_search, start, end, start, true, last_search_regex)
 			if !found {
 				break
 			}
@@ -442,7 +473,7 @@ func (la *LineArray) SearchMatch(b *Buffer, pos Loc) bool {
 
 // invalidateSearchMatches marks search matches for the given line as outdated.
 // It is called when the line is modified.
-func (la *LineArray) invalidateSearchMatches(lineN int) {
+func (la *LineArray) InvalidateSearchMatches(lineN int) {
 	if la.lines[lineN].search != nil {
 		for _, s := range la.lines[lineN].search {
 			s.done = false

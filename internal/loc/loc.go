@@ -1,9 +1,20 @@
-package buffer
+package loc
 
 import (
 	"github.com/zyedidia/micro/v2/internal/util"
 	"go.lsp.dev/protocol"
 )
+
+type Buffer interface {
+	LineArray
+	Line(i int) string
+}
+
+type LineArray interface {
+	LineBytes(n int) []byte
+	Start() Loc
+	End() Loc
+}
 
 // Loc stores a location
 type Loc struct {
@@ -56,7 +67,7 @@ func (l Loc) Equal(b Loc) bool {
 // The following functions require a buffer to know where newlines are
 
 // Diff returns the distance between two locations
-func DiffLA(a, b Loc, buf *LineArray) int {
+func DiffLA(a, b Loc, la LineArray) int {
 	if a.Y == b.Y {
 		if a.X > b.X {
 			return a.X - b.X
@@ -72,14 +83,14 @@ func DiffLA(a, b Loc, buf *LineArray) int {
 	loc := 0
 	for i := a.Y + 1; i < b.Y; i++ {
 		// + 1 for the newline
-		loc += util.CharacterCount(buf.LineBytes(i)) + 1
+		loc += util.CharacterCount(la.LineBytes(i)) + 1
 	}
-	loc += util.CharacterCount(buf.LineBytes(a.Y)) - a.X + b.X + 1
+	loc += util.CharacterCount(la.LineBytes(a.Y)) - a.X + b.X + 1
 	return loc
 }
 
 // This moves the location one character to the right
-func (l Loc) right(buf *LineArray) Loc {
+func (l Loc) right(buf LineArray) Loc {
 	if l == buf.End() {
 		return Loc{l.X + 1, l.Y}
 	}
@@ -93,7 +104,7 @@ func (l Loc) right(buf *LineArray) Loc {
 }
 
 // This moves the given location one character to the left
-func (l Loc) left(buf *LineArray) Loc {
+func (l Loc) left(buf LineArray) Loc {
 	if l == buf.Start() {
 		return Loc{l.X - 1, l.Y}
 	}
@@ -108,31 +119,31 @@ func (l Loc) left(buf *LineArray) Loc {
 
 // MoveLA moves the cursor n characters to the left or right
 // It moves the cursor left if n is negative
-func (l Loc) MoveLA(n int, buf *LineArray) Loc {
+func (l Loc) MoveLA(n int, la LineArray) Loc {
 	if n > 0 {
 		for i := 0; i < n; i++ {
-			l = l.right(buf)
+			l = l.right(la)
 		}
 		return l
 	}
 	for i := 0; i < util.Abs(n); i++ {
-		l = l.left(buf)
+		l = l.left(la)
 	}
 	return l
 }
 
 // Diff returns the difference between two locs
-func (l Loc) Diff(b Loc, buf *Buffer) int {
-	return DiffLA(l, b, buf.LineArray)
+func (l Loc) Diff(b Loc, buf Buffer) int {
+	return DiffLA(l, b, buf)
 }
 
 // Move moves a loc n characters
-func (l Loc) Move(n int, buf *Buffer) Loc {
-	return l.MoveLA(n, buf.LineArray)
+func (l Loc) Move(n int, buf Buffer) Loc {
+	return l.MoveLA(n, buf)
 }
 
 // ByteOffset is just like ToCharPos except it counts bytes instead of runes
-func ByteOffset(pos Loc, buf *Buffer) int {
+func ByteOffset(pos Loc, buf Buffer) int {
 	x, y := pos.X, pos.Y
 	loc := 0
 	for i := 0; i < y; i++ {
@@ -144,7 +155,7 @@ func ByteOffset(pos Loc, buf *Buffer) int {
 }
 
 // clamps a loc within a buffer
-func clamp(pos Loc, la *LineArray) Loc {
+func Clamp(pos Loc, la LineArray) Loc {
 	if pos.GreaterEqual(la.End()) {
 		return la.End()
 	} else if pos.LessThan(la.Start()) {
@@ -153,7 +164,7 @@ func clamp(pos Loc, la *LineArray) Loc {
 	return pos
 }
 
-func toLoc(r protocol.Position) Loc {
+func ToLoc(r protocol.Position) Loc {
 	return Loc{
 		X: int(r.Character),
 		Y: int(r.Line),

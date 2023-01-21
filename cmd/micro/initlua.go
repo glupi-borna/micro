@@ -8,6 +8,7 @@ import (
 
 	"github.com/zyedidia/micro/v2/internal/action"
 	"github.com/zyedidia/micro/v2/internal/buffer"
+	"github.com/zyedidia/micro/v2/internal/loc"
 	"github.com/zyedidia/micro/v2/internal/config"
 	"github.com/zyedidia/micro/v2/internal/display"
 	"github.com/zyedidia/micro/v2/internal/lsp"
@@ -152,7 +153,7 @@ func luaImportMicroBuffer() *lua.LTable {
 	ulua.L.SetField(pkg, "NewBufferFromFile", luar.New(ulua.L, func(path string) (*buffer.Buffer, error) {
 		return buffer.NewBufferFromFile(path, buffer.BTDefault)
 	}))
-	ulua.L.SetField(pkg, "ByteOffset", luar.New(ulua.L, buffer.ByteOffset))
+	ulua.L.SetField(pkg, "ByteOffset", luar.New(ulua.L, loc.ByteOffset))
 	ulua.L.SetField(pkg, "Log", luar.New(ulua.L, buffer.WriteLog))
 	ulua.L.SetField(pkg, "LogBuf", luar.New(ulua.L, buffer.GetLogBuf))
 	ulua.L.SetField(pkg, "FindBufferByID", luar.New(ulua.L, buffer.FindBufferByID))

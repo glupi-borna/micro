@@ -1,14 +1,18 @@
-package display
+package overlay
 
 import (
+	. "github.com/zyedidia/micro/v2/internal/loc"
 	"github.com/zyedidia/micro/v2/internal/util"
 	"github.com/zyedidia/micro/v2/internal/screen"
-	"github.com/zyedidia/micro/v2/internal/buffer"
 	"github.com/zyedidia/micro/v2/internal/config"
 	"github.com/zyedidia/tcell/v2"
 )
 
-type Loc = buffer.Loc
+type BufWindow interface {
+	CursorVisual() Loc
+	IsActive() bool
+	LocToVisual(int, int) Loc
+}
 
 // OpenBehavior describes What happens when opening an overlay
 // when another overlay with the same ID already exists
@@ -21,7 +25,7 @@ const (
 	OBReplace
 )
 
-var GetCurrentBufWindow func() *BufWindow
+var GetCurrentBufWindow func() BufWindow
 
 type OverlayPosition interface {
 	ScreenPos() Loc
@@ -31,12 +35,12 @@ type OverlayPosition interface {
 type V2 struct { Loc }
 
 type Anchor struct {
-	Window *BufWindow
+	Window BufWindow
 	loc Loc
 }
 
 type CursorAnchor struct {
-	Window *BufWindow
+	Window BufWindow
 }
 
 func (c CursorAnchor) ScreenPos() Loc {
@@ -112,7 +116,7 @@ func NewOverlay(
 }
 
 func NewOverlayAnchored(
-	ID string, Window *BufWindow, loc Loc, size Loc, ob OpenBehavior,
+	ID string, Window BufWindow, loc Loc, size Loc, ob OpenBehavior,
 	draw func(*Overlay),
 	ev func(*Overlay, tcell.Event) bool,
 ) *Overlay {
@@ -128,7 +132,7 @@ func NewOverlayStatic(
 }
 
 func NewOverlayCursor(
-	ID string, Window *BufWindow, size Loc, ob OpenBehavior,
+	ID string, Window BufWindow, size Loc, ob OpenBehavior,
 	draw func(*Overlay),
 	ev func(*Overlay, tcell.Event) bool,
 ) *Overlay {
@@ -160,7 +164,7 @@ func (o *Overlay) Resize(width int, height int) {
 	o.Size.Y = util.Min(height, maxh)
 }
 
-func (o *Overlay) SetAnchor(Window *BufWindow, loc Loc) {
+func (o *Overlay) SetAnchor(Window BufWindow, loc Loc) {
 	o.Pos = Anchor{Window, loc}
 }
 
@@ -168,7 +172,7 @@ func (o *Overlay) SetPos(loc Loc) {
 	o.Pos = V2{loc}
 }
 
-func (o *Overlay) SetCursorAnchod(Window *BufWindow) {
+func (o *Overlay) SetCursorAnchor(Window BufWindow) {
 	o.Pos = CursorAnchor{Window}
 }
 

@@ -37,7 +37,7 @@ func (s STATE) String() string {
 		case STATE_RUNNING: return "running"
 		case STATE_RESTARTING: return "restarting"
 	}
-	return "unknown(" + fmt.Sprint(s) + ")"
+	return "unknown(" + fmt.Sprint(int(s)) + ")"
 }
 
 func (s *Server) state_guard(states ...STATE) error {

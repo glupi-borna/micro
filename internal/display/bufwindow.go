@@ -6,6 +6,7 @@ import (
 
 	runewidth "github.com/mattn/go-runewidth"
 	"github.com/zyedidia/micro/v2/internal/buffer"
+	. "github.com/zyedidia/micro/v2/internal/loc"
 	"github.com/zyedidia/micro/v2/internal/config"
 	"github.com/zyedidia/micro/v2/internal/screen"
 	"github.com/zyedidia/micro/v2/internal/util"
@@ -484,7 +485,7 @@ func (w *BufWindow) displayBuffer() {
 						if !left {
 							matchingBraces = append(matchingBraces, curLoc)
 						} else {
-							matchingBraces = append(matchingBraces, curLoc.Move(-1, b))
+							matchingBraces = append(matchingBraces, curLoc.MoveLA(-1, b))
 						}
 					}
 				}

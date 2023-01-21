@@ -7,7 +7,7 @@ import (
 
 // InBounds returns whether the given location is a valid character position in the given buffer
 func InBounds(pos Loc, buf *Buffer) bool {
-	if pos.Y < 0 || pos.Y >= len(buf.lines) || pos.X < 0 || pos.X > util.CharacterCount(buf.LineBytes(pos.Y)) {
+	if pos.Y < 0 || pos.Y >= buf.Len() || pos.X < 0 || pos.X > util.CharacterCount(buf.LineBytes(pos.Y)) {
 		return false
 	}
 
@@ -186,7 +186,7 @@ func (c *Cursor) Deselect(start bool) {
 		if start {
 			c.Loc = c.CurSelection[0]
 		} else {
-			c.Loc = c.CurSelection[1].Move(-1, c.buf)
+			c.Loc = c.CurSelection[1].MoveLA(-1, c.buf.LineArray)
 		}
 		c.ResetSelection()
 		c.StoreVisualX()
@@ -209,8 +209,8 @@ func (c *Cursor) SelectLine() {
 	c.Start()
 	c.SetSelectionStart(c.Loc)
 	c.End()
-	if len(c.buf.lines)-1 > c.Y {
-		c.SetSelectionEnd(c.Loc.Move(1, c.buf))
+	if c.buf.Len()-1 > c.Y {
+		c.SetSelectionEnd(c.Loc.MoveLA(1, c.buf))
 	} else {
 		c.SetSelectionEnd(c.Loc)
 	}
@@ -227,7 +227,7 @@ func (c *Cursor) AddLineToSelection() {
 	}
 	if c.Loc.GreaterThan(c.OrigSelection[1]) {
 		c.End()
-		c.SetSelectionEnd(c.Loc.Move(1, c.buf))
+		c.SetSelectionEnd(c.Loc.MoveLA(1, c.buf))
 		c.SetSelectionStart(c.OrigSelection[0])
 	}
 
@@ -241,8 +241,8 @@ func (c *Cursor) UpN(amount int) {
 	proposedY := c.Y - amount
 	if proposedY < 0 {
 		proposedY = 0
-	} else if proposedY >= len(c.buf.lines) {
-		proposedY = len(c.buf.lines) - 1
+	} else if proposedY >= c.buf.Len() {
+		proposedY = c.buf.Len() - 1
 	}
 
 	bytes := c.buf.LineBytes(proposedY)
@@ -312,8 +312,8 @@ func (c *Cursor) Right() {
 func (c *Cursor) Relocate() {
 	if c.Y < 0 {
 		c.Y = 0
-	} else if c.Y >= len(c.buf.lines) {
-		c.Y = len(c.buf.lines) - 1
+	} else if c.Y >= c.buf.Len() {
+		c.Y = c.buf.Len() - 1
 	}
 
 	if c.X < 0 {
@@ -331,7 +331,7 @@ func (c *Cursor) SelectWord() {
 
 	if !util.IsWordChar(c.RuneUnder(c.X)) {
 		c.SetSelectionStart(c.Loc)
-		c.SetSelectionEnd(c.Loc.Move(1, c.buf))
+		c.SetSelectionEnd(c.Loc.MoveLA(1, c.buf))
 		c.OrigSelection = c.CurSelection
 		return
 	}
@@ -350,7 +350,7 @@ func (c *Cursor) SelectWord() {
 		forward++
 	}
 
-	c.SetSelectionEnd(Loc{forward, c.Y}.Move(1, c.buf))
+	c.SetSelectionEnd(Loc{forward, c.Y}.MoveLA(1, c.buf))
 	c.OrigSelection[1] = c.CurSelection[1]
 	c.Loc = c.CurSelection[1]
 }
@@ -382,7 +382,7 @@ func (c *Cursor) AddWordToSelection() {
 			forward++
 		}
 
-		c.SetSelectionEnd(Loc{forward, c.Y}.Move(1, c.buf))
+		c.SetSelectionEnd(Loc{forward, c.Y}.MoveLA(1, c.buf))
 		c.SetSelectionStart(c.OrigSelection[0])
 	}
 

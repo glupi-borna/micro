@@ -26,6 +26,8 @@ import (
 	"github.com/zyedidia/micro/v2/internal/screen"
 	"github.com/zyedidia/micro/v2/internal/util"
 	"github.com/zyedidia/micro/v2/pkg/highlight"
+	"github.com/zyedidia/micro/v2/internal/loc"
+	"github.com/zyedidia/micro/v2/internal/linearray"
 	lspt "go.lsp.dev/protocol"
 	"golang.org/x/text/encoding/htmlindex"
 	"golang.org/x/text/encoding/unicode"
@@ -34,6 +36,15 @@ import (
 )
 
 const backupTime = 8000
+
+type Loc = loc.Loc
+type LineArray = linearray.LineArray
+type FileFormat = linearray.FileFormat
+const (
+	FFAuto = linearray.FFAuto
+	FFDos = linearray.FFDos
+	FFUnix = linearray.FFUnix
+)
 
 var (
 	// OpenBuffers is a list of the currently open buffers
@@ -138,7 +149,7 @@ func (b *SharedBuffer) insert(pos Loc, value []byte) {
 	b.isModified = true
 	b.HasSuggestions = false
 	b.HasTooltip = false
-	b.LineArray.insert(pos, value)
+	b.LineArray.Insert(pos, value)
 
 	inslines := bytes.Count(value, []byte{'\n'})
 	b.MarkModified(pos.Y, pos.Y+inslines)
@@ -150,7 +161,7 @@ func (b *SharedBuffer) remove(start, end Loc) []byte {
 	b.HasSuggestions = false
 	b.HasTooltip = false
 	defer b.MarkModified(start.Y, end.Y)
-	sub := b.LineArray.remove(start, end)
+	sub := b.LineArray.Remove(start, end)
 	b.lspDidChange(start, end, "")
 	return sub
 }
@@ -193,8 +204,8 @@ func (b *SharedBuffer) HasLSP() bool {
 func (b *SharedBuffer) MarkModified(start, end int) {
 	b.ModifiedThisFrame = true
 
-	start = util.Clamp(start, 0, len(b.lines)-1)
-	end = util.Clamp(end, 0, len(b.lines)-1)
+	start = util.Clamp(start, 0, b.Len()-1)
+	end = util.Clamp(end, 0, b.Len()-1)
 
 	if b.Settings["syntax"].(bool) && b.SyntaxDef != nil {
 		l := -1
@@ -205,7 +216,7 @@ func (b *SharedBuffer) MarkModified(start, end int) {
 	}
 
 	for i := start; i <= end; i++ {
-		b.LineArray.invalidateSearchMatches(i)
+		b.LineArray.InvalidateSearchMatches(i)
 	}
 }
 
@@ -421,7 +432,7 @@ func NewBuffer(r io.Reader, size int64, path string, startcursor Loc, btype BufT
 				}
 			}
 
-			b.LineArray = NewLineArray(uint64(size), ff, reader)
+			b.LineArray = linearray.NewLineArray(uint64(size), ff, reader)
 		}
 		b.EventHandler = NewEventHandler(b.SharedBuffer, b.cursors)
 
@@ -486,6 +497,19 @@ func NewBuffer(r io.Reader, size int64, path string, startcursor Loc, btype BufT
 	}
 
 	return b
+}
+
+func (b *Buffer) GetLastSearch() string {
+	return b.LastSearch
+}
+
+func (b *Buffer) GetLastSearchRegex() bool {
+	return b.LastSearchRegex
+}
+
+func (b *Buffer) GetSetting(name string) (any, bool) {
+	setting, ok :=  b.Settings[name]
+	return setting, ok
 }
 
 // initializes LSP servers if they are not already running,
@@ -614,10 +638,10 @@ func (b *Buffer) Remove(start, end Loc) {
 func (b *Buffer) ApplyEdit(e lspt.TextEdit) {
 	if len(e.NewText) == 0 {
 		// deletion
-		b.Remove(toLoc(e.Range.Start), toLoc(e.Range.End))
+		b.Remove(loc.ToLoc(e.Range.Start), loc.ToLoc(e.Range.End))
 	} else {
 		// insert/replace
-		b.Replace(toLoc(e.Range.Start), toLoc(e.Range.End), e.NewText)
+		b.Replace(loc.ToLoc(e.Range.Start), loc.ToLoc(e.Range.End), e.NewText)
 	}
 }
 
@@ -633,8 +657,8 @@ func (b *Buffer) ApplyEdits(edits []lspt.TextEdit) {
 				start, end Loc
 			}{
 				t:     e.NewText,
-				start: toLoc(e.Range.Start),
-				end:   toLoc(e.Range.End),
+				start: loc.ToLoc(e.Range.Start),
+				end:   loc.ToLoc(e.Range.End),
 			}
 		}
 		// Since edit ranges are guaranteed by LSP to never overlap we can sort
@@ -834,19 +858,20 @@ func (b *Buffer) RuneAt(loc Loc) rune {
 }
 
 // WordAt returns the word around a given location in the buffer
-func (b *Buffer) WordAt(loc Loc) []byte {
-	if len(b.LineBytes(loc.Y)) == 0 || !util.IsWordChar(b.RuneAt(loc)) {
+func (b *Buffer) WordAt(l Loc) []byte {
+	if len(b.LineBytes(l.Y)) == 0 || !util.IsWordChar(b.RuneAt(l)) {
 		return []byte{}
 	}
 
-	start := loc
-	end := loc.Move(1, b)
+	start := l
+	la := b.GetLineArray()
+	end := l.MoveLA(1, la)
 
-	for start.X > 0 && util.IsWordChar(b.RuneAt(start.Move(-1, b))) {
+	for start.X > 0 && util.IsWordChar(b.RuneAt(start.MoveLA(-1, la))) {
 		start.X--
 	}
 
-	lineLen := util.CharacterCount(b.LineBytes(loc.Y))
+	lineLen := util.CharacterCount(b.LineBytes(l.Y))
 	for end.X < lineLen && util.IsWordChar(b.RuneAt(end)) {
 		end.X++
 	}
@@ -897,23 +922,20 @@ func calcHash(b *Buffer, out *[md5.Size]byte) error {
 	h := md5.New()
 
 	size := 0
-	if len(b.lines) > 0 {
-		n, e := h.Write(b.lines[0].data)
-		if e != nil {
-			return e
-		}
+	if b.Len() > 0 {
+		n, e := h.Write(b.LineArray.Line(0))
+		if e != nil { return e }
 		size += n
 
-		for _, l := range b.lines[1:] {
+		for i := 1 ; i < b.Len() ; i++ {
 			n, e = h.Write([]byte{'\n'})
-			if e != nil {
-				return e
-			}
+			if e != nil { return e }
+
 			size += n
-			n, e = h.Write(l.data)
-			if e != nil {
-				return e
-			}
+			l := b.LineArray.Line(i)
+			n, e = h.Write(l)
+			if e != nil { return e }
+
 			size += n
 		}
 	}
@@ -957,7 +979,7 @@ func (b *Buffer) UpdateRules() {
 			continue
 		}
 
-		if ((ft == "unknown" || ft == "") && highlight.MatchFiletype(header.FtDetect, b.Path, b.lines[0].data)) || header.FileType == ft {
+		if ((ft == "unknown" || ft == "") && highlight.MatchFiletype(header.FtDetect, b.Path, b.LineArray.Line(0))) || header.FileType == ft {
 			syndef, err := highlight.ParseDef(file, header)
 			if err != nil {
 				screen.TermMessage("Error parsing syntax file " + f.Name() + ": " + err.Error())
@@ -985,7 +1007,7 @@ func (b *Buffer) UpdateRules() {
 		}
 
 		if ft == "unknown" || ft == "" {
-			if highlight.MatchFiletype(header.FtDetect, b.Path, b.lines[0].data) {
+			if highlight.MatchFiletype(header.FtDetect, b.Path, b.LineArray.Line(0)) {
 				syntaxFile = f.Name()
 				break
 			}
@@ -1079,7 +1101,7 @@ func (b *Buffer) UpdateRules() {
 
 // ClearMatches clears all of the syntax highlighting for the buffer
 func (b *Buffer) ClearMatches() {
-	for i := range b.lines {
+	for i := 0 ; i < b.Len() ; i++ {
 		b.SetMatch(i, nil)
 		b.SetState(i, nil)
 	}
@@ -1194,14 +1216,14 @@ func (b *Buffer) ClearCursors() {
 
 // MoveLinesUp moves the range of lines up one row
 func (b *Buffer) MoveLinesUp(start int, end int) {
-	if start < 1 || start >= end || end > len(b.lines) {
+	if start < 1 || start >= end || end > b.Len() {
 		return
 	}
 	l := string(b.LineBytes(start - 1))
-	if end == len(b.lines) {
+	if end == b.Len() {
 		b.insert(
 			Loc{
-				util.CharacterCount(b.lines[end-1].data),
+				util.CharacterCount(b.LineArray.Line(end-1)),
 				end - 1,
 			},
 			[]byte{'\n'},
@@ -1219,7 +1241,7 @@ func (b *Buffer) MoveLinesUp(start int, end int) {
 
 // MoveLinesDown moves the range of lines down one row
 func (b *Buffer) MoveLinesDown(start int, end int) {
-	if start < 0 || start >= end || end >= len(b.lines) {
+	if start < 0 || start >= end || end >= b.Len() {
 		return
 	}
 	l := string(b.LineBytes(end))
@@ -1286,7 +1308,7 @@ func (b *Buffer) FindMatchingBrace(braceType [2]rune, start Loc) (Loc, bool, boo
 		}
 	} else if startChar == braceType[1] || leftChar == braceType[1] {
 		for y := start.Y; y >= 0; y-- {
-			l := []rune(string(b.lines[y].data))
+			l := []rune(string(b.LineArray.Line(y)))
 			xInit := len(l) - 1
 			if y == start.Y {
 				if leftChar == braceType[1] {
@@ -1333,7 +1355,7 @@ func (b *Buffer) Retab() {
 		}
 
 		l = bytes.TrimLeft(l, " \t")
-		b.lines[i].data = append(ws, l...)
+		b.LineArray.SetLineData(i, append(ws, l...))
 		b.MarkModified(i, i)
 		dirty = true
 	}
@@ -1589,6 +1611,11 @@ func (b *Buffer) GetDiagnostics() []lspt.Diagnostic  {
 
 	return util.Fold(util.ChanMapAll(b.Servers, fn)...)
 }
+
+func (b *Buffer) GetLineArray() *LineArray {
+	return b.LineArray
+}
+
 
 // WriteLog writes a string to the log buffer
 func WriteLog(s string) {

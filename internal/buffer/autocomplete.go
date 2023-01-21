@@ -9,6 +9,7 @@ import (
 
 	"github.com/zyedidia/micro/v2/internal/util"
 	"github.com/zyedidia/micro/v2/internal/lsp"
+	"github.com/zyedidia/micro/v2/internal/loc"
 
 	"go.lsp.dev/protocol"
 )
@@ -87,11 +88,13 @@ func GetWord(b *Buffer) ([]byte, int) {
 	l := b.LineBytes(c.Y)
 	l = util.SliceStart(l, c.X)
 
-	if c.X == 0 || util.IsWhitespace(b.RuneAt(c.Loc.Move(-1, b))) {
+	la := b.GetLineArray()
+
+	if c.X == 0 || util.IsWhitespace(b.RuneAt(c.Loc.MoveLA(-1, la))) {
 		return []byte{}, -1
 	}
 
-	if util.IsNonAlphaNumeric(b.RuneAt(c.Loc.Move(-1, b))) {
+	if util.IsNonAlphaNumeric(b.RuneAt(c.Loc.MoveLA(-1, la))) {
 		return []byte{}, c.X
 	}
 
@@ -296,16 +299,16 @@ func LSPComplete(b *Buffer) []Completion {
 		if item.TextEdit != nil && len(item.TextEdit.NewText) > 0 {
 			completions[i].Edits = []Delta{{
 				Text:  []byte(item.TextEdit.NewText),
-				Start: toLoc(item.TextEdit.Range.Start),
-				End:   toLoc(item.TextEdit.Range.End),
+				Start: loc.ToLoc(item.TextEdit.Range.Start),
+				End:   loc.ToLoc(item.TextEdit.Range.End),
 			}}
 
 			if b.Settings["lsp-autoimport"].(bool) {
 				for _, e := range item.AdditionalTextEdits {
 					d := Delta{
 						Text:  []byte(e.NewText),
-						Start: toLoc(e.Range.Start),
-						End:   toLoc(e.Range.End),
+						Start: loc.ToLoc(e.Range.Start),
+						End:   loc.ToLoc(e.Range.End),
 					}
 					completions[i].Edits = append(completions[i].Edits, d)
 				}

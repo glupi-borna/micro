@@ -26,7 +26,7 @@ import (
 	"github.com/zyedidia/micro/v2/internal/screen"
 	"github.com/zyedidia/micro/v2/internal/shell"
 	"github.com/zyedidia/micro/v2/internal/util"
-	"github.com/zyedidia/micro/v2/internal/display"
+	"github.com/zyedidia/micro/v2/internal/overlay"
 	"github.com/zyedidia/tcell/v2"
 )
 
@@ -436,7 +436,7 @@ func DoEvent() {
 		log.Println(bp.Name(), bp.IsActive())
 	}
 
-	display.DisplayOverlays()
+	overlay.DisplayOverlays()
 	screen.Screen.Show()
 
 	// Check for new events
@@ -480,7 +480,7 @@ func DoEvent() {
 
 	ulua.Lock.Lock()
 
-	event_handled := display.HandleOverlayEvent(event)
+	event_handled := overlay.HandleOverlayEvent(event)
 
 	// if event != nil {
 	if !event_handled {
