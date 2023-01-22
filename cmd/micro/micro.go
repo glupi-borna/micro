@@ -27,6 +27,7 @@ import (
 	"github.com/zyedidia/micro/v2/internal/shell"
 	"github.com/zyedidia/micro/v2/internal/util"
 	"github.com/zyedidia/micro/v2/internal/overlay"
+	"github.com/zyedidia/micro/v2/internal/display"
 	"github.com/zyedidia/tcell/v2"
 )
 
@@ -388,17 +389,17 @@ func main() {
 		// time out after 10ms
 	}
 
-	/*fmt.Printf("\x1b[?1003;1006h")
+	fmt.Printf("\x1b[?1003;1006h")
 
-	options := []display.SelectMenuOption[int]{}
+	options := []overlay.SelectMenuOption[int]{}
 
 	for i:=1 ; i <= 20 ; i++ {
-		options = append(options, display.SelectMenuOption[int]{
+		options = append(options, overlay.SelectMenuOption[int]{
 			i, fmt.Sprint("Option ", i),
 		})
 	}
 
-	display.GetCurrentBufWindow = func() *display.BufWindow {
+	overlay.GetCurrentBufWindow = func() overlay.BufWindow {
 		bp := action.MainTab().CurPane()
 		bw, ok := bp.BWindow.(*display.BufWindow)
 		if ok { return bw }
@@ -408,12 +409,12 @@ func main() {
 	for _, bp := range action.OpenBufPanes {
 		bw, ok := bp.BWindow.(*display.BufWindow)
 		if ok {
-			display.SelectMenu(options, func(o display.SelectMenuOption[int]) {
+			overlay.SearchMenu(options, func(o overlay.SelectMenuOption[int]) {
 				bp.Buf.Insert(bp.Buf.GetActiveCursor().Loc, o.Text)
-			}, display.CursorAnchor{bw})
+			}, overlay.CursorAnchor{bw})
 			break
 		}
-	}*/
+	}
 
 	for {
 		DoEvent()

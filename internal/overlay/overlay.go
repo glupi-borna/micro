@@ -5,6 +5,7 @@ import (
 	"github.com/zyedidia/micro/v2/internal/util"
 	"github.com/zyedidia/micro/v2/internal/screen"
 	"github.com/zyedidia/micro/v2/internal/config"
+	"github.com/zyedidia/micro/v2/internal/buffer"
 	"github.com/zyedidia/tcell/v2"
 )
 
@@ -77,6 +78,7 @@ type Overlay struct {
 	Size Loc
 	Draw func(*Overlay)
 	EventHandler func(*Overlay, tcell.Event) bool
+	CleanupHandler func(*Overlay)
 }
 
 var Overlays = make(map[string][]*Overlay)
@@ -362,3 +364,103 @@ func SelectMenu[K SelectOption](options []K, onSelect func(K), op OverlayPositio
 	)
 }
 
+func SearchMenu[K SelectOption](options []K, onSelect func(K), op OverlayPosition) {
+	search_buffer := buffer.NewBufferFromString("", "", buffer.BTScratch)
+	option := 0
+
+	mx, my := 0, 0
+	scroll := 0
+	height := util.Min(len(options), 11)
+
+	o := NewOverlay(
+		"search_menu", op, Loc{20, height}, OBReplace,
+		func (o *Overlay) {
+			loc := o.ScreenPos()
+			DrawClear(loc.X, loc.Y, o.Size.X, o.Size.Y, tcell.StyleDefault)
+			contains_mouse := o.Contains(mx, my)
+
+			def := config.DefStyle.Reverse(true)
+			rev := config.DefStyle
+			if style, ok:= config.Colorscheme["statusline"]; ok {
+				def = style
+				rev = style.Reverse(true)
+			}
+
+			DrawText(search_buffer.Line(0), loc.X, loc.Y, o.Size.X, 1, def, true)
+
+			x := loc.X
+			y := loc.Y+1
+			offset := 0
+
+			for index:=0 ; index<util.Min(len(options)-scroll, 10) ; index++ {
+				optindex := index + scroll
+				opt := options[optindex]
+				y_start := y + offset
+
+				if optindex == option {
+					offset += DrawText(opt.Label(), x, y+offset, o.Size.X, o.Size.Y-offset, rev, true)
+				} else {
+					offset += DrawText(opt.Label(), x, y+offset, o.Size.X, o.Size.Y-offset, def, true)
+				}
+
+				if contains_mouse && my >= y_start && my < y+offset {
+					contains_mouse = false
+					option = optindex
+					screen.Redraw()
+				}
+			}
+		},
+		func (o *Overlay, ev tcell.Event) bool {
+			switch e := ev.(type) {
+			case *tcell.EventKey:
+				if e.Key() == tcell.KeyEnter {
+					onSelect(options[option])
+					o.Remove()
+					return true
+				} else if e.Key() == tcell.KeyUp {
+					option = (option-1+len(options)) % len(options)
+					scroll = util.Clamp(option-5, 0, len(options)-10)
+					return true
+				} else if e.Key() == tcell.KeyDown {
+					option = (option+1) % len(options)
+					scroll = util.Clamp(option-5, 0, len(options)-10)
+					return true
+				} else if e.Key() == tcell.KeyEnter {
+					onSelect(options[option])
+					o.Remove()
+					return true
+				} else if e.Key() == tcell.KeyRune {
+					for _, c := range search_buffer.GetCursors() {
+						search_buffer.SetCurCursor(c.Num)
+						if c.HasSelection() {
+							c.DeleteSelection()
+							c.ResetSelection()
+						}
+						search_buffer.Insert(c.Loc, string(e.Rune()))
+					}
+					return true
+				}
+
+				// TODO: Extract bindings from action to a new module
+			case *tcell.EventMouse:
+				mx, my = e.Position()
+				if !o.Contains(mx, my) { return false }
+				b := e.Buttons()
+				if my > o.Pos.ScreenPos().Y && b == tcell.Button1 {
+					onSelect(options[option])
+					o.Remove()
+				} else if b == tcell.WheelUp {
+					scroll = util.Clamp(scroll-1, 0, len(options)-10)
+				} else if b == tcell.WheelDown {
+					scroll = util.Clamp(scroll+1, 0, len(options)-10)
+				}
+				return true
+			}
+			return false
+		},
+	)
+
+	o.CleanupHandler = func(o *Overlay) {
+		search_buffer.Close()
+	}
+}
