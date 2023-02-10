@@ -14,6 +14,7 @@ import (
 	"time"
 	"fmt"
 	"runtime/debug"
+	"path"
 	lsp "go.lsp.dev/protocol"
 	"go.lsp.dev/uri"
 	"github.com/zyedidia/micro/v2/internal/config"
@@ -240,6 +241,9 @@ func (s *Server) initialize() {
 	params := lsp.InitializeParams{
 		ProcessID: int32(os.Getpid()),
 		RootURI:   uri.File(s.root),
+		WorkspaceFolders: []lsp.WorkspaceFolder{
+			lsp.WorkspaceFolder{ Name: path.Base(s.root), URI: uri.File(s.root).Filename() },
+		},
 		Capabilities: lsp.ClientCapabilities{
 			Workspace: &lsp.WorkspaceClientCapabilities{
 				WorkspaceEdit: &lsp.WorkspaceClientCapabilitiesWorkspaceEdit{
