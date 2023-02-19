@@ -242,7 +242,7 @@ func (s *Server) initialize() {
 		ProcessID: int32(os.Getpid()),
 		RootURI:   uri.File(s.root),
 		WorkspaceFolders: []lsp.WorkspaceFolder{
-			lsp.WorkspaceFolder{ Name: path.Base(s.root), URI: uri.File(s.root).Filename() },
+			{ Name: path.Base(s.root), URI: string(uri.File(s.root)) },
 		},
 		Capabilities: lsp.ClientCapabilities{
 			Workspace: &lsp.WorkspaceClientCapabilities{
@@ -363,8 +363,6 @@ func (s *Server) receive() {
 			s.Log(err)
 			continue
 		}
-
-		s.Log("<<<", resp)
 
 		var r RPCResult
 		err = json.Unmarshal(resp, &r)
@@ -531,7 +529,12 @@ func (s *Server) sendMessage(m interface{}) error {
 		return err
 	}
 
-	s.Log(">>>", string(msg))
+	strmsg := string(msg)
+	if !strings.Contains(strmsg, `"method":"textDocument/didOpen"`) {
+		s.Log(">>>", string(msg))
+	} else {
+		s.Log(">>> textDocument/didOpen (truncated)")
+	}
 
 	// encode header and proper line endings
 	msg = append(msg, '\r', '\n')
