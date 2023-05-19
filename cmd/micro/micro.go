@@ -27,7 +27,7 @@ import (
 	"github.com/zyedidia/micro/v2/internal/shell"
 	"github.com/zyedidia/micro/v2/internal/util"
 	"github.com/zyedidia/micro/v2/internal/overlay"
-	"github.com/zyedidia/micro/v2/internal/display"
+	// "github.com/zyedidia/micro/v2/internal/display"
 	"github.com/zyedidia/tcell/v2"
 )
 
@@ -389,7 +389,7 @@ func main() {
 		// time out after 10ms
 	}
 
-	fmt.Printf("\x1b[?1003;1006h")
+	/*fmt.Printf("\x1b[?1003;1006h")
 
 	options := []overlay.SelectMenuOption[int]{}
 
@@ -414,7 +414,7 @@ func main() {
 			}, overlay.CursorAnchor{bw})
 			break
 		}
-	}
+	}*/
 
 	for {
 		DoEvent()
@@ -432,10 +432,6 @@ func DoEvent() {
 	for _, ep := range action.MainTab().Panes { ep.Display() }
 	action.MainTab().Display()
 	action.InfoBar.Display()
-
-	for _, bp := range action.OpenBufPanes {
-		log.Println(bp.Name(), bp.IsActive())
-	}
 
 	overlay.DisplayOverlays()
 	screen.Screen.Show()

@@ -754,20 +754,18 @@ func (w *BufWindow) displayBuffer() {
 		}
 
 		wrap := func() {
-			if vloc.Y >= 0 {
-				vloc.X = 0
-				if diffgutter {
-					w.drawDiffGutter(lineNumStyle, true, &vloc, &bloc)
-				}
+			vloc.X = 0
+			if diffgutter {
+				w.drawDiffGutter(lineNumStyle, true, &vloc, &bloc)
+			}
 
-				// This will draw an empty line number because the current line is wrapped
-				if ruler {
-					hasMsg, msgStyle := w.hasMessageOrDiagnosticAt(&vloc, &bloc)
-					if hasMsg {
-						w.drawLineNum(msgStyle, markStyle, true, &vloc, &bloc)
-					} else {
-						w.drawLineNum(lineNumStyle, markStyle, true, &vloc, &bloc)
-					}
+			// This will draw an empty line number because the current line is wrapped
+			if ruler {
+				hasMsg, msgStyle := w.hasMessageOrDiagnosticAt(&vloc, &bloc)
+				if hasMsg {
+					w.drawLineNum(msgStyle, markStyle, true, &vloc, &bloc)
+				} else {
+					w.drawLineNum(lineNumStyle, markStyle, true, &vloc, &bloc)
 				}
 			}
 		}
