@@ -27,7 +27,7 @@ import (
 	"github.com/zyedidia/micro/v2/internal/shell"
 	"github.com/zyedidia/micro/v2/internal/util"
 	"github.com/zyedidia/micro/v2/internal/overlay"
-	// "github.com/zyedidia/micro/v2/internal/display"
+	"github.com/zyedidia/micro/v2/internal/display"
 	"github.com/zyedidia/tcell/v2"
 )
 
@@ -398,6 +398,7 @@ func main() {
 			i, fmt.Sprint("Option ", i),
 		})
 	}
+	*/
 
 	overlay.GetCurrentBufWindow = func() overlay.BufWindow {
 		bp := action.MainTab().CurPane()
@@ -406,6 +407,7 @@ func main() {
 		return nil
 	}
 
+	/*
 	for _, bp := range action.OpenBufPanes {
 		bw, ok := bp.BWindow.(*display.BufWindow)
 		if ok {

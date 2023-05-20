@@ -127,8 +127,6 @@ type SharedBuffer struct {
 	// Whether or not suggestions can be autocompleted must be shared because
 	// it changes based on how the buffer has changed
 	HasSuggestions bool
-	HasTooltip bool
-	TooltipLines []string
 
 	// The Highlighter struct actually performs the highlighting
 	Highlighter *highlight.Highlighter
@@ -148,7 +146,6 @@ type SharedBuffer struct {
 func (b *SharedBuffer) insert(pos Loc, value []byte) {
 	b.isModified = true
 	b.HasSuggestions = false
-	b.HasTooltip = false
 	b.LineArray.Insert(pos, value)
 
 	inslines := bytes.Count(value, []byte{'\n'})
@@ -159,7 +156,6 @@ func (b *SharedBuffer) insert(pos Loc, value []byte) {
 func (b *SharedBuffer) remove(start, end Loc) []byte {
 	b.isModified = true
 	b.HasSuggestions = false
-	b.HasTooltip = false
 	defer b.MarkModified(start.Y, end.Y)
 	sub := b.LineArray.Remove(start, end)
 	b.lspDidChange(start, end, "")
@@ -1493,9 +1489,9 @@ func (b *Buffer) DiffStatus(lineN int) DiffStatus {
 	return b.diff[lineN]
 }
 
-func (b *Buffer) LSPHover() ([]string, error) {
+func (b *Buffer) LSPHover() (string, error) {
 	if !b.HasLSP() {
-		return nil, nil
+		return "", nil
 	}
 
 	cur := b.GetActiveCursor()
@@ -1522,7 +1518,7 @@ func (b *Buffer) LSPHover() ([]string, error) {
 		}
 	}
 
-	return filtered_splits, nil
+	return strings.Join(filtered_splits, "\n"), nil
 }
 
 func (b *Buffer) LSPDefinition() ([]lspt.Location, error) {

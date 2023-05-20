@@ -550,10 +550,6 @@ func (h *BufPane) execAction(action BufAction, name string, cursor int, te *tcel
 		h.Buf.HasSuggestions = false
 	}
 
-	if name != "Tooltip" {
-		h.Buf.HasTooltip = false
-	}
-
 	_, isMulti := MultiActions[name]
 	if (!isMulti && cursor == 0) || isMulti {
 		if h.PluginCB("pre" + name) {

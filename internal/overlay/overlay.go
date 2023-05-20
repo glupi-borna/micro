@@ -2,11 +2,13 @@ package overlay
 
 import (
 	. "github.com/zyedidia/micro/v2/internal/loc"
+	runewidth "github.com/mattn/go-runewidth"
 	"github.com/zyedidia/micro/v2/internal/util"
 	"github.com/zyedidia/micro/v2/internal/screen"
 	"github.com/zyedidia/micro/v2/internal/config"
 	"github.com/zyedidia/micro/v2/internal/buffer"
 	"github.com/zyedidia/tcell/v2"
+	"strings"
 )
 
 type BufWindow interface {
@@ -51,7 +53,9 @@ func (c CursorAnchor) ScreenPos() Loc {
 }
 
 func (c CursorAnchor) Visible() bool {
-	return c.Window.IsActive() && GetCurrentBufWindow() == c.Window
+	is_active := c.Window.IsActive()
+	is_current := c.Window == GetCurrentBufWindow()
+	return is_active && is_current
 }
 
 func (a Anchor) ScreenPos() Loc {
@@ -251,7 +255,8 @@ func DrawClear(x1, y1, w, h int, style tcell.Style) {
 
 // Draws text, sized to the given rectangle, and returns the
 // amount of lines required.
-func DrawText(text string, x1, y1, w, h int, style tcell.Style, fillLine bool) int {
+func DrawText(text string, x1, y1, w, h int, style tcell.Style) int {
+	tabsize := int(config.GlobalSettings["tabsize"].(float64))
 	x := x1
 	y := y1
 	x2 := x1+w
@@ -262,15 +267,25 @@ func DrawText(text string, x1, y1, w, h int, style tcell.Style, fillLine bool) i
 	DrawClear(x1, y, w, 1, style)
 
 	for _, r := range text {
-		if r == '\n' || x >= x2 {
+		rw := 1
+		if r == '\t' {
+			rw = tabsize
+		} else {
+			rw = runewidth.RuneWidth(r)
+		}
+
+		if r == '\n' || x+rw > x2 {
 			x = x1
 			y++
-			if y < y2 { DrawClear(x1, y, w, 1, style) }
+			if y < y2 {
+				DrawClear(x1, y, w, 1, style)
+			}
 			if r == '\n' { continue }
 		}
 		if y >= y2 { break }
+
 		screen.SetContent(x, y, r, nil, style)
-		x++
+		x += rw
 	}
 
 	return (y - y1) + 1
@@ -286,6 +301,171 @@ type SelectMenuOption[K any] struct {
 }
 func (m SelectMenuOption[any]) Label() string { return m.Text }
 
+func Text_MaxLine_TotalLines(s string) (int, int) {
+	l := 0
+	cur := 0
+	lines := 1
+	for _, ch := range s {
+		if ch == '\n' {
+			if cur > l { l = cur }
+			cur = 0
+			lines++
+			continue
+		}
+		cur++
+	}
+	if cur > l { l = cur }
+	return l, lines
+}
+
+func Text_Wrapped_MaxLineWidth_TotalLines(s string, maxwidth int) (string, int, int) {
+	l := 0
+	cur := 0
+	lines := 1
+	tabsize := int(config.GlobalSettings["tabsize"].(float64))
+	tabstr := strings.Repeat(" ", tabsize)
+
+	out := strings.Builder{}
+	word := ""
+
+	for _, ch := range s {
+		switch ch {
+
+		case '\n':
+			// Flush word
+			out.WriteString(word)
+			word = ""
+
+			// Update max line length and line count
+			if cur > l { l = cur }
+			cur = 0
+			lines++
+
+			// Insert newline char into string
+			out.WriteRune(ch)
+			continue
+
+		case '\t':
+			// Flush word
+			out.WriteString(word)
+			word = ""
+
+			if cur + tabsize > maxwidth {
+				// Update max line length and line count
+				if cur > l { l = cur }
+				cur = 0
+				lines++
+				// Insert newline char into string
+				out.WriteRune('\n')
+			}
+
+			// Insert tab into string
+			cur += tabsize
+			out.WriteString(tabstr)
+			continue
+
+		default:
+			rw := runewidth.RuneWidth(ch)
+			ws := util.IsWhitespace(ch)
+
+			if ws {
+				// Flush word
+				out.WriteString(word)
+				word = ""
+			} else {
+				if len(word) + rw > maxwidth {
+					// Flush word
+					out.WriteString(word)
+					word = ""
+
+					// Update max line length and line count
+					if cur > l { l = cur }
+					cur = 0
+					lines++
+
+					// Insert newline char into string
+					out.WriteRune('\n')
+				}
+
+				word += string(ch)
+			}
+
+			if cur + rw > maxwidth {
+				// Update max line length and line count
+				if cur > l { l = cur }
+				cur = len(word)
+				lines++
+				// Insert newline char into string
+				out.WriteRune('\n')
+			} else if (ws) {
+				out.WriteRune(ch)
+			}
+
+			cur += rw
+		}
+	}
+
+	out.WriteString(word)
+	if cur > l { l = cur }
+
+	return out.String(), l, lines
+}
+
+func Tooltip(text string, op OverlayPosition) {
+	maxw, lines := Text_MaxLine_TotalLines(text)
+	wrapped, wraph := "", 0
+
+	scroll := 0
+	scrollSpeed := int(config.GlobalSettings["scrollspeed"].(float64))
+
+	NewOverlay(
+		"tooltip", op, Loc{maxw+2, lines}, OBReplace,
+
+		func (o *Overlay) {
+			wrapped, _, wraph = Text_Wrapped_MaxLineWidth_TotalLines(text, o.Size.X-2)
+			o.Resize(maxw+2, wraph)
+
+			style := config.DefStyle.Reverse(true)
+			if s, ok := config.Colorscheme["tooltip"] ; ok {
+				style = s
+			}
+
+			scrolled := strings.Join(strings.Split(wrapped, "\n")[scroll:], "\n")
+
+			loc := o.ScreenPos()
+			DrawClear(loc.X, loc.Y, o.Size.X, o.Size.Y, style)
+			DrawText(scrolled, loc.X+1, loc.Y, o.Size.X-1, o.Size.Y, style)
+		},
+
+		func (o *Overlay, ev tcell.Event) bool {
+			switch e := ev.(type) {
+			case *tcell.EventKey:
+				o.Remove()
+				return false
+			case *tcell.EventMouse:
+				mx, my := e.Position()
+				if o.Contains(mx, my) {
+					b := e.Buttons()
+					maxScroll := wraph - o.Size.Y + 1
+					if wraph <= o.Size.Y {
+						maxScroll = 0
+					}
+
+					if b == tcell.WheelUp {
+						scroll = util.Clamp(scroll-scrollSpeed, 0, maxScroll)
+						return true
+					} else if b == tcell.WheelDown {
+						scroll = util.Clamp(scroll+scrollSpeed, 0, maxScroll)
+						return true
+					}
+				}
+				o.Remove()
+			}
+			return false
+		},
+	)
+}
+
 func SelectMenu[K SelectOption](options []K, onSelect func(K), op OverlayPosition) {
 	option := 0
 	mx, my := 0, 0
@@ -295,6 +475,7 @@ func SelectMenu[K SelectOption](options []K, onSelect func(K), op OverlayPositio
 
 	NewOverlay(
 		"select_menu", op, Loc{20, height}, OBReplace,
+
 		func (o *Overlay) {
 			loc := o.ScreenPos()
 			DrawClear(loc.X, loc.Y, o.Size.X, o.Size.Y, tcell.StyleDefault)
@@ -317,9 +498,9 @@ func SelectMenu[K SelectOption](options []K, onSelect func(K), op OverlayPositio
 				y_start := y + offset
 
 				if optindex == option {
-					offset += DrawText(opt.Label(), x, y+offset, o.Size.X, o.Size.Y-offset, rev, true)
+					offset += DrawText(opt.Label(), x, y+offset, o.Size.X, o.Size.Y-offset, rev)
 				} else {
-					offset += DrawText(opt.Label(), x, y+offset, o.Size.X, o.Size.Y-offset, def, true)
+					offset += DrawText(opt.Label(), x, y+offset, o.Size.X, o.Size.Y-offset, def)
 				}
 
 				if contains_mouse && my >= y_start && my < y+offset {
@@ -329,6 +510,7 @@ func SelectMenu[K SelectOption](options []K, onSelect func(K), op OverlayPositio
 				}
 			}
 		},
+
 		func (o *Overlay, ev tcell.Event) bool {
 			switch e := ev.(type) {
 			case *tcell.EventKey:
@@ -361,6 +543,7 @@ func SelectMenu[K SelectOption](options []K, onSelect func(K), op OverlayPositio
 			}
 			return false
 		},
+
 	)
 }
 
@@ -386,7 +569,7 @@ func SearchMenu[K SelectOption](options []K, onSelect func(K), op OverlayPositio
 				rev = style.Reverse(true)
 			}
 
-			DrawText(search_buffer.Line(0), loc.X, loc.Y, o.Size.X, 1, def, true)
+			DrawText(search_buffer.Line(0), loc.X, loc.Y, o.Size.X, 1, def)
 
 			x := loc.X
 			y := loc.Y+1
@@ -398,9 +581,9 @@ func SearchMenu[K SelectOption](options []K, onSelect func(K), op OverlayPositio
 				y_start := y + offset
 
 				if optindex == option {
-					offset += DrawText(opt.Label(), x, y+offset, o.Size.X, o.Size.Y-offset, rev, true)
+					offset += DrawText(opt.Label(), x, y+offset, o.Size.X, o.Size.Y-offset, rev)
 				} else {
-					offset += DrawText(opt.Label(), x, y+offset, o.Size.X, o.Size.Y-offset, def, true)
+					offset += DrawText(opt.Label(), x, y+offset, o.Size.X, o.Size.Y-offset, def)
 				}
 
 				if contains_mouse && my >= y_start && my < y+offset {

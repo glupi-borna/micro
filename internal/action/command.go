@@ -605,21 +605,19 @@ func (h *BufPane) ShowCmd(args []string) {
 		return
 	}
 
-	var option interface{}
-	place := Place_Global
-	if opt, ok := h.Buf.Settings[args[0]]; ok {
-		place = Place_Local
-		option = opt
-	} else if opt, ok := config.GlobalSettings[args[0]]; ok {
-		option = opt
-	}
+	local_val, has_local_val := h.Buf.Settings[args[0]]
+	global_val, has_global_val := config.GlobalSettings[args[0]]
 
-	if option == nil {
-		InfoBar.Error(args[0], " is not a valid option")
+	if !has_local_val && !has_global_val {
+		InfoBar.Error(args[0], " is not a valid options")
 		return
+	} else if (has_local_val && has_global_val) {
+		InfoBar.Message("local: ", local_val, " (global: ", global_val , ")")
+	} else if (has_local_val && !has_global_val) {
+		InfoBar.Message("local: ", local_val)
+	} else if (!has_local_val && has_global_val) {
+		InfoBar.Message("global: ", global_val)
 	}
-
-	InfoBar.Message(place + ":", option)
 }
 
 // ShowKeyCmd displays the action that a key is bound to

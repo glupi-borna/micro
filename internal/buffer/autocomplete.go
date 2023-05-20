@@ -77,7 +77,6 @@ func (b *Buffer) CycleAutocomplete(forward bool) {
 	b.ApplyDeltas(comp.Edits)
 	if len(b.Completions) > 1 {
 		b.HasSuggestions = true
-		b.HasTooltip = false
 	}
 }
 

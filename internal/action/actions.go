@@ -20,6 +20,7 @@ import (
 	"github.com/zyedidia/micro/v2/internal/shell"
 	"github.com/zyedidia/micro/v2/internal/util"
 	"github.com/zyedidia/micro/v2/internal/lsp"
+	"github.com/zyedidia/micro/v2/internal/overlay"
 	"github.com/zyedidia/tcell/v2"
 	"go.lsp.dev/protocol"
 )
@@ -152,7 +153,6 @@ func (h *BufPane) MouseRelease(e *tcell.EventMouse) bool {
 	mouseLoc := h.LocFromVisual(buffer.Loc{mx, my})
 
 	b.HasSuggestions = false
-	b.HasTooltip = false
 
 	if isInGutter {
 		markExists := false
@@ -1963,13 +1963,12 @@ func (h *BufPane) Tooltip() bool {
 	}
 
 	if len(tip) > 0 {
-		h.Buf.TooltipLines = tip
-		h.Buf.HasTooltip = true
-		h.Buf.HasSuggestions = false
-	} else {
-		h.Buf.TooltipLines = nil
-		h.Buf.HasTooltip = false
-		h.Buf.HasSuggestions = false
+		bw, ok := h.BWindow.(*display.BufWindow)
+		if !ok {
+			InfoBar.Error("BufPane does not have a BufWindow")
+			return false
+		}
+		overlay.Tooltip(tip, overlay.CursorAnchor{bw})
 	}
 
 	return true
