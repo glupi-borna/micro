@@ -24,6 +24,11 @@ import (
 
 type STATE int
 
+type Diagnostic struct {
+	lsp.Diagnostic
+	Server *Server
+}
+
 const (
 	STATE_CREATED STATE = iota
 	STATE_INITIALIZED
@@ -351,6 +356,25 @@ func (s *Server) Restart() {
 	s.initialize()
 }
 
+func convertDiagnostics(s *Server, diags []lsp.Diagnostic) []Diagnostic {
+	out := make([]Diagnostic, len(diags))
+	for i, diag := range diags {
+		out[i].Diagnostic = diag
+		out[i].Server = s
+	}
+	return out
+}
+
+func (s *Server) storeDiagnostics(uri uri.URI, diag []Diagnostic) {
+	s.diagnostics.Store(uri, diag)
+}
+
+func (s *Server) loadDiagnostics(uri uri.URI) []Diagnostic {
+	diags, ok := s.diagnostics.Load(uri)
+	if !ok { return nil }
+	return diags.([]Diagnostic)
+}
+
 func (s *Server) receive() {
 	for s.State != STATE_CREATED {
 		resp, err := s.receiveMessage()
@@ -384,7 +408,7 @@ func (s *Server) receive() {
 				continue
 			}
 			fileuri := uri.URI(string(diag.Params.URI))
-			s.diagnostics.Store(fileuri, diag.Params.Diagnostics)
+			s.storeDiagnostics(fileuri, convertDiagnostics(s, diag.Params.Diagnostics))
 		case "":
 			// Response
 			if _, ok := s.responses[r.ID]; ok {
@@ -395,7 +419,7 @@ func (s *Server) receive() {
 	}
 }
 
-func Style(d *lsp.Diagnostic) tcell.Style {
+func Style(d *Diagnostic) tcell.Style {
 	switch d.Severity {
 	case lsp.DiagnosticSeverityInformation:
 	case lsp.DiagnosticSeverityHint:
@@ -414,24 +438,16 @@ func Style(d *lsp.Diagnostic) tcell.Style {
 	return config.DefStyle
 }
 
-func (s *Server) GetDiagnostics(filename string) []lsp.Diagnostic {
+func (s *Server) GetDiagnostics(filename string) []Diagnostic {
 	fileuri := uri.File(filename)
-	diags, exists := s.diagnostics.Load(fileuri)
-	if exists {
-		return diags.([]lsp.Diagnostic)
-	} else {
-		return nil
-	}
+	return s.loadDiagnostics(fileuri)
 }
 
 func (s *Server) DiagnosticsCount(filename string) int {
 	fileuri := uri.File(filename)
-	diags, exists := s.diagnostics.Load(fileuri)
-	if exists {
-		return len(diags.([]lsp.Diagnostic))
-	} else {
-		return 0
-	}
+	diags := s.loadDiagnostics(fileuri)
+	if diags == nil { return 0 }
+	return len(diags)
 }
 
 func (s *Server) receiveMessage() (outbyte []byte, err error) {

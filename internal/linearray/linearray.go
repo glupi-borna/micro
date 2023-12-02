@@ -6,8 +6,8 @@ import (
 	"io"
 	"sync"
 
-	"github.com/zyedidia/micro/v2/internal/util"
 	"github.com/zyedidia/micro/v2/internal/loc"
+	"github.com/zyedidia/micro/v2/internal/util"
 	"github.com/zyedidia/micro/v2/pkg/highlight"
 )
 
@@ -207,6 +207,11 @@ func (la *LineArray) Bytes() []byte {
 		}
 	}
 	return b.Bytes()
+}
+
+func (la *LineArray) UTF16Pos(pos Loc) Loc {
+	line_str := string(la.Line(pos.Y))[:pos.X]
+	return Loc{util.UTF16Length(line_str), pos.Y}
 }
 
 // newlineBelow adds a newline below the given line number

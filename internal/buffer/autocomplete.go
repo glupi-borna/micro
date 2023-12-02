@@ -2,14 +2,14 @@ package buffer
 
 import (
 	"bytes"
-	"io/ioutil"
+	"io/fs"
 	"os"
 	"sort"
 	"strings"
 
-	"github.com/zyedidia/micro/v2/internal/util"
-	"github.com/zyedidia/micro/v2/internal/lsp"
 	"github.com/zyedidia/micro/v2/internal/loc"
+	"github.com/zyedidia/micro/v2/internal/lsp"
+	"github.com/zyedidia/micro/v2/internal/util"
 
 	"go.lsp.dev/protocol"
 )
@@ -129,15 +129,15 @@ func FileComplete(b *Buffer) []Completion {
 	sep := string(os.PathSeparator)
 	dirs := strings.Split(input, sep)
 
-	var files []os.FileInfo
+	var files []fs.DirEntry
 	var err error
 	if len(dirs) > 1 {
 		directories := strings.Join(dirs[:len(dirs)-1], sep) + sep
 
 		directories, _ = util.ReplaceHome(directories)
-		files, err = ioutil.ReadDir(directories)
+		files, err = os.ReadDir(directories)
 	} else {
-		files, err = ioutil.ReadDir(".")
+		files, err = os.ReadDir(".")
 	}
 
 	if err != nil {
@@ -273,12 +273,13 @@ func LSPComplete(b *Buffer) []Completion {
 	}
 
 	c := b.GetActiveCursor()
-	pos := c.ToPos()
+	l := b.UTF16Pos(Loc{c.X, c.Y})
+	pos := l.ToPos()
 
 	fn := func(s *lsp.Server) ([]protocol.CompletionItem, bool) {
 		res, err := s.Completion(b.AbsPath, pos)
 		if err == nil { return res, true }
-		s.Log("Complete:", err)
+		s.Log(s.GetLanguage().Name, "[LSP ERROR]: ", err.Error())
 		return nil, false
 	}
 
@@ -298,6 +299,7 @@ func LSPComplete(b *Buffer) []Completion {
 		if item.TextEdit != nil && len(item.TextEdit.NewText) > 0 {
 			completions[i].Edits = []Delta{{
 				Text:  []byte(item.TextEdit.NewText),
+				// TODO: Convert from utf16
 				Start: loc.ToLoc(item.TextEdit.Range.Start),
 				End:   loc.ToLoc(item.TextEdit.Range.End),
 			}}
@@ -306,6 +308,7 @@ func LSPComplete(b *Buffer) []Completion {
 				for _, e := range item.AdditionalTextEdits {
 					d := Delta{
 						Text:  []byte(e.NewText),
+						// TODO: Convert from utf16
 						Start: loc.ToLoc(e.Range.Start),
 						End:   loc.ToLoc(e.Range.End),
 					}

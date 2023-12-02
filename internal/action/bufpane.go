@@ -157,9 +157,7 @@ func BufMapEvent(k Event, action string) {
 		for i, a := range actionfns {
 			innerSuccess := true
 			for j, c := range cursors {
-				if c == nil {
-					continue
-				}
+				if c == nil { continue }
 				h.Buf.SetCurCursor(c.Num)
 				h.Cursor = c
 				if i == 0 || (success && types[i-1] == '&') || (!success && types[i-1] == '|') || (types[i-1] == ',') {
@@ -501,7 +499,8 @@ func (h *BufPane) HandleEvent(event tcell.Event) {
 			if diags != nil {
 				for _, d := range diags {
 					if c.Y == int(d.Range.Start.Line) || c.Y == int(d.Range.End.Line) {
-						InfoBar.GutterMessage(d.Message)
+						InfoBar.GutterMessage(
+							d.Server.GetLanguage().Name + ": " + d.Message)
 						none = false
 						break
 					}
@@ -706,7 +705,8 @@ func (h *BufPane) SetActive(b bool) {
 			if diags != nil {
 				for _, d := range diags {
 					if c.Y == int(d.Range.Start.Line) || c.Y == int(d.Range.End.Line) {
-						InfoBar.GutterMessage(d.Message)
+						InfoBar.GutterMessage(
+							d.Server.GetLanguage().Name + ": " + d.Message)
 						none = false
 						break
 					}

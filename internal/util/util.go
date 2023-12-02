@@ -408,6 +408,17 @@ func IntOpts(opts interface{}) []int {
 	return iopts
 }
 
+const surrSelf = 0x10000
+func UTF16Length(text string) int {
+	n := len([]rune(text))
+	for _, v := range text {
+		if v >= surrSelf {
+			n++
+		}
+	}
+	return n
+}
+
 // GetCharPosInLine gets the char position of a visual x y
 // coordinate (this is necessary because tabs are 1 char but
 // 4 visual spaces)

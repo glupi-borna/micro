@@ -7,7 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
+	"log"
 	"os"
 	"path"
 	"path/filepath"
@@ -17,17 +17,16 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	"log"
 
 	dmp "github.com/sergi/go-diff/diffmatchpatch"
 	"github.com/zyedidia/micro/v2/internal/config"
+	"github.com/zyedidia/micro/v2/internal/linearray"
+	"github.com/zyedidia/micro/v2/internal/loc"
 	"github.com/zyedidia/micro/v2/internal/lsp"
 	ulua "github.com/zyedidia/micro/v2/internal/lua"
 	"github.com/zyedidia/micro/v2/internal/screen"
 	"github.com/zyedidia/micro/v2/internal/util"
 	"github.com/zyedidia/micro/v2/pkg/highlight"
-	"github.com/zyedidia/micro/v2/internal/loc"
-	"github.com/zyedidia/micro/v2/internal/linearray"
 	lspt "go.lsp.dev/protocol"
 	"golang.org/x/text/encoding/htmlindex"
 	"golang.org/x/text/encoding/unicode"
@@ -146,26 +145,30 @@ type SharedBuffer struct {
 func (b *SharedBuffer) insert(pos Loc, value []byte) {
 	b.isModified = true
 	b.HasSuggestions = false
+	pos16 := b.UTF16Pos(pos)
 	b.LineArray.Insert(pos, value)
+
 
 	inslines := bytes.Count(value, []byte{'\n'})
 	b.MarkModified(pos.Y, pos.Y+inslines)
-
-	b.lspDidChange(pos, pos, string(value))
+	b.lspDidChange(pos16, pos16, string(value))
 }
 func (b *SharedBuffer) remove(start, end Loc) []byte {
 	b.isModified = true
 	b.HasSuggestions = false
 	defer b.MarkModified(start.Y, end.Y)
+
+	start16 := b.UTF16Pos(start)
+	end16 := b.UTF16Pos(end)
+
 	sub := b.LineArray.Remove(start, end)
-	b.lspDidChange(start, end, "")
+	b.lspDidChange(start16, end16, "")
 	return sub
 }
 
 func (b *SharedBuffer) lspDidChange(start, end Loc, text string) {
 	if b.HasLSP() {
 		b.version++
-		// TODO: convert to UTF16 codepoints
 		change := lspt.TextDocumentContentChangeEvent{
 			Range: lspt.Range{
 				Start: start.ToPos(),
@@ -508,6 +511,10 @@ func (b *Buffer) GetSetting(name string) (any, bool) {
 	return setting, ok
 }
 
+func (b *Buffer) ReloadSettings() error {
+	return config.InitLocalSettings(b.Settings, b.AbsPath)
+}
+
 // initializes LSP servers if they are not already running,
 // or calls didOpen on them
 func (b *Buffer) lspInit() {
@@ -810,7 +817,7 @@ func (b *Buffer) ReOpen() error {
 	}
 
 	reader := bufio.NewReader(transform.NewReader(file, enc.NewDecoder()))
-	data, err := ioutil.ReadAll(reader)
+	data, err := io.ReadAll(reader)
 	txt := string(data)
 
 	if err != nil {
@@ -1600,8 +1607,8 @@ func (b *Buffer) SearchMatch(pos Loc) bool {
 	return b.LineArray.SearchMatch(b, pos)
 }
 
-func (b *Buffer) GetDiagnostics() []lspt.Diagnostic  {
-	fn := func (s *lsp.Server) ([]lspt.Diagnostic, bool) {
+func (b *Buffer) GetDiagnostics() []lsp.Diagnostic  {
+	fn := func (s *lsp.Server) ([]lsp.Diagnostic, bool) {
 		return s.GetDiagnostics(b.AbsPath), true
 	}
 

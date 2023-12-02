@@ -14,6 +14,14 @@ import (
 	"github.com/zyedidia/micro/v2/internal/screen"
 )
 
+func Command(name string, arg ...string) *exec.Cmd {
+	cmd := exec.Command(name, arg...)
+	cmd.Stdin = &bytes.Buffer{}
+	cmd.Stdout = &bytes.Buffer{}
+	cmd.Stderr = &bytes.Buffer{}
+	return cmd
+}
+
 // ExecCommand executes a command using exec
 // It returns any output/errors
 func ExecCommand(name string, arg ...string) (string, error) {

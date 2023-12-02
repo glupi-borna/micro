@@ -3,7 +3,6 @@ package display
 import (
 	"strconv"
 	"strings"
-
 	runewidth "github.com/mattn/go-runewidth"
 	"github.com/zyedidia/micro/v2/internal/buffer"
 	. "github.com/zyedidia/micro/v2/internal/loc"
@@ -32,6 +31,7 @@ type BufWindow struct {
 	hasMessage       bool
 	maxLineNumLength int
 	drawDivider      bool
+	cursorVisual     buffer.Loc
 }
 
 // NewBufWindow creates a new window at a location in the screen with a width and height
@@ -427,6 +427,8 @@ func (w *BufWindow) getStyle(style tcell.Style, bloc buffer.Loc) (tcell.Style, b
 }
 
 func (w *BufWindow) showCursor(x, y int, main bool) {
+	w.cursorVisual = Loc{X: x, Y: y}
+
 	if w.active {
 		if main {
 			screen.ShowCursor(x, y)
@@ -1005,6 +1007,7 @@ func (w *BufWindow) displayCompleteBox() {
 	}
 
 	for i, comp := range w.Buf.Completions {
+		if w.completeBox.Y+i+1 > w.bufHeight { break }
 		cur := i == w.Buf.CurCompletion
 		display(comp.Label+" ", labelw, 0, i+1, cur)
 		display(comp.Kind+" ", kindw, labelw, i+1, cur)
@@ -1106,6 +1109,5 @@ func (w *BufWindow) LocToVisual(X, Y int) buffer.Loc {
 }
 
 func (w *BufWindow) CursorVisual() buffer.Loc {
-	cl := w.Buf.GetActiveCursor().Loc
-	return w.LocToVisual(cl.X, cl.Y)
+	return w.cursorVisual
 }

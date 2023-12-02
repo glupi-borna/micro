@@ -112,6 +112,7 @@ func luaImportMicroConfig() *lua.LTable {
 func luaImportMicroShell() *lua.LTable {
 	pkg := ulua.L.NewTable()
 
+	ulua.L.SetField(pkg, "Command", luar.New(ulua.L, shell.Command))
 	ulua.L.SetField(pkg, "ExecCommand", luar.New(ulua.L, shell.ExecCommand))
 	ulua.L.SetField(pkg, "RunCommand", luar.New(ulua.L, shell.RunCommand))
 	ulua.L.SetField(pkg, "RunBackgroundShell", luar.New(ulua.L, shell.RunBackgroundShell))
@@ -173,8 +174,10 @@ func luaImportMicroUtil() *lua.LTable {
 	ulua.L.SetField(pkg, "Version", luar.New(ulua.L, util.Version))
 	ulua.L.SetField(pkg, "SemVersion", luar.New(ulua.L, util.SemVersion))
 	ulua.L.SetField(pkg, "CharacterCountInString", luar.New(ulua.L, util.CharacterCountInString))
-	ulua.L.SetField(pkg, "RuneStr", luar.New(ulua.L, func(r rune) string {
-		return string(r)
+	ulua.L.SetField(pkg, "RuneStr", luar.New(ulua.L, func(r rune) string { return string(r) }))
+	ulua.L.SetField(pkg, "InterfaceArray", luar.New(ulua.L, func() []interface{} {
+		out := make([]interface{}, 0, 1)
+		return out
 	}))
 
 	return pkg

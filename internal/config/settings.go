@@ -102,7 +102,7 @@ func verifySetting(option string, value interface{}, def reflect.Type) bool {
 		varray := value.([]interface{})
 		if len(varray) == 0 { return true }
 		eltype := reflect.TypeOf(varray[0])
-		return def.Elem().AssignableTo(eltype)
+		return eltype.AssignableTo(def.Elem())
 	}
 
 	return def.AssignableTo(vtype)
@@ -145,7 +145,7 @@ func InitLocalSettings(settings map[string]interface{}, path string) error {
 			if strings.HasPrefix(k, "ft:") {
 				if settings["filetype"].(string) == k[3:] {
 					for k1, v1 := range v.(map[string]interface{}) {
-						if _, ok := settings[k1]; ok && !verifySetting(k1, reflect.TypeOf(v1), reflect.TypeOf(settings[k1])) {
+						if _, ok := settings[k1]; ok && !verifySetting(k1, v1, reflect.TypeOf(settings[k1])) {
 							parseError = fmt.Errorf("Error: setting '%s' has incorrect type (%s), using default value: %v (%s)", k, reflect.TypeOf(v1), settings[k1], reflect.TypeOf(settings[k1]))
 							continue
 						}
@@ -161,7 +161,7 @@ func InitLocalSettings(settings map[string]interface{}, path string) error {
 
 				if g.MatchString(path) {
 					for k1, v1 := range v.(map[string]interface{}) {
-						if _, ok := settings[k1]; ok && !verifySetting(k1, reflect.TypeOf(v1), reflect.TypeOf(settings[k1])) {
+						if _, ok := settings[k1]; ok && !verifySetting(k1, v1, reflect.TypeOf(settings[k1])) {
 							parseError = fmt.Errorf("Error: setting '%s' has incorrect type (%s), using default value: %v (%s)", k, reflect.TypeOf(v1), settings[k1], reflect.TypeOf(settings[k1]))
 							continue
 						}
