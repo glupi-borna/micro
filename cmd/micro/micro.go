@@ -3,7 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -209,7 +209,7 @@ func LoadInput(args []string) []*buffer.Buffer {
 		// Option 2
 		// The input is not a terminal, so something is being piped in
 		// and we should read from stdin
-		input, err = ioutil.ReadAll(os.Stdin)
+		input, err = io.ReadAll(os.Stdin)
 		if err != nil {
 			screen.TermMessage("Error reading from stdin: ", err)
 			input = []byte{}

@@ -186,7 +186,7 @@ func (b *SharedBuffer) lspDidChange(start, end Loc, text string) {
 func (b *SharedBuffer) ActiveServers() []*lsp.Server {
 	var servers []*lsp.Server
 	for _, s := range b.Servers {
-		if s.State != lsp.STATE_CREATED {
+		if s.State == lsp.STATE_RUNNING || s.State == lsp.STATE_INITIALIZED {
 			servers = append(servers, s)
 		}
 	}
@@ -546,7 +546,7 @@ func (b *Buffer) lspInit() {
 
 func (b *Buffer) LSPRestart() {
 	var wg sync.WaitGroup
-	for _, s := range b.Servers {
+	for _, s := range b.ActiveServers() {
 		server := s
 		wg.Add(1)
 		go func() {
@@ -556,6 +556,24 @@ func (b *Buffer) LSPRestart() {
 	}
 	wg.Wait()
 }
+
+func (b *Buffer) LSPResync() {
+	if !b.HasLSP() { return }
+	var wg sync.WaitGroup
+	ft := lsp.Filetype(b.Settings["filetype"].(string))
+	b.version++
+	for _, s := range b.ActiveServers() {
+		server := s
+		wg.Add(1)
+		go func() {
+			server.DidClose(b.AbsPath)
+			server.DidOpen(b.AbsPath, ft, string(b.Bytes()), b.version)
+			wg.Done()
+		}()
+	}
+	wg.Wait()
+}
+
 
 // Close removes this buffer from the list of open buffers
 func (b *Buffer) Close() {
@@ -730,11 +748,13 @@ func (b *Buffer) GetRenameSymbol() (string, *lsp.Server, error) {
 				UseDefault: true,
 			}
 			rpcerr, ok := err.(*lsp.RPCError)
-			if !ok || rpcerr.LSPError.Code != lsp.MethodNotFound {
-				WriteLogLn(
-					"RPC ERROR - GetRenameSymbol:",
-					rpcerr.LSPError.Code.String(),
-					rpcerr.LSPError.Message)
+			if ok {
+				if rpcerr.LSPError.Code != lsp.MethodNotFound {
+					WriteLogLn(
+						"RPC ERROR - GetRenameSymbol:",
+						rpcerr.LSPError.Code.String(),
+						rpcerr.LSPError.Message)
+				}
 			}
 		}
 
@@ -1050,6 +1070,13 @@ func (b *Buffer) UpdateRules() {
 	if b.SyntaxDef != nil && highlight.HasIncludes(b.SyntaxDef) {
 		includes := highlight.GetIncludes(b.SyntaxDef)
 
+		include_exists := func(name string) bool {
+			for _, i := range includes {
+				if i == name { return true }
+			}
+			return false
+		}
+
 		var files []*highlight.File
 		for _, f := range config.ListRuntimeFiles(config.RTSyntax) {
 			data, err := f.Data()
@@ -1057,6 +1084,7 @@ func (b *Buffer) UpdateRules() {
 				screen.TermMessage("Error parsing syntax file " + f.Name() + ": " + err.Error())
 				continue
 			}
+
 			header, err := highlight.MakeHeaderYaml(data)
 			if err != nil {
 				screen.TermMessage("Error parsing syntax file " + f.Name() + ": " + err.Error())
@@ -1070,10 +1098,20 @@ func (b *Buffer) UpdateRules() {
 						screen.TermMessage("Error parsing syntax file " + f.Name() + ": " + err.Error())
 						continue
 					}
+
+					def, err := highlight.ParseDef(file, header)
+					subincludes := highlight.GetIncludes(def)
+					for _, i := range subincludes {
+						if !include_exists(i) {
+							includes = append(includes, i)
+						}
+					}
+
 					files = append(files, file)
 					break
 				}
 			}
+
 			if len(files) >= len(includes) {
 				break
 			}

@@ -1,4 +1,4 @@
-filetype: typescript
+filetype: oldtypescript
 
 detect:
     filename: "\\.tsx?$"
@@ -46,4 +46,4 @@ rules:
         end: "`"
         rules:
             - constant.specialChar: "\\\\."
-            - identifier: "\\x24\\{.*?\\}"    
+            - identifier: "\\x24\\{.*?\\}"

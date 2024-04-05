@@ -46,26 +46,6 @@ func (s STATE) String() string {
 	return "unknown(" + fmt.Sprint(int(s)) + ")"
 }
 
-func (s *Server) state_guard(states ...STATE) error {
-	for _, state := range states {
-		if s.State == state { return nil }
-	}
-
-	states_string := ""
-	last := len(states)-1
-	for i, state := range states {
-		if i != 0 && i != last {
-			states_string += ", "
-		} else if i != 0 && i == last {
-			states_string += " or "
-		}
-
-		states_string += state.String()
-	}
-
-	return errors.New("Expected state to be " + states_string + ", but " + s.language.Name + " is " + s.State.String())
-}
-
 var servers map[string]*Server
 var slock sync.Mutex
 
@@ -174,6 +154,26 @@ func env_to_strs(env map[string]string) []string {
 	return out
 }
 
+func (s *Server) state_guard(states ...STATE) error {
+	for _, state := range states {
+		if s.State == state { return nil }
+	}
+
+	states_string := ""
+	last := len(states)-1
+	for i, state := range states {
+		if i != 0 && i != last {
+			states_string += ", "
+		} else if i != 0 && i == last {
+			states_string += " or "
+		}
+
+		states_string += state.String()
+	}
+
+	return errors.New("Expected state to be " + states_string + ", but " + s.language.Name + " is " + s.State.String())
+}
+
 func (s *Server) runCommand() error {
 	if err := s.state_guard(STATE_CREATED) ; err != nil { return err }
 	if s.cmd != nil { return errors.New(s.language.Name + " is already running.") }
@@ -243,12 +243,33 @@ func (s *Server) Log(args ...any) {
 // initialize performs the LSP initialization handshake
 // The directory must be an absolute path
 func (s *Server) initialize() {
+	var options any = s.language.Options
+
+	config_path := path.Join(s.root, s.language.Name + ".mlsp.json")
+	if _, err := os.Stat(config_path); !errors.Is(err, os.ErrNotExist) {
+		data, err := os.ReadFile(config_path)
+		if err == nil {
+			var new_options any = make(map[string]any)
+			err := json.Unmarshal(data, &new_options)
+			if err == nil {
+				options = new_options
+			} else {
+				s.Log("Failed to parse config at", config_path)
+			}
+		} else {
+			s.Log("Failed to read config at", config_path)
+		}
+	} else {
+		s.Log(config_path, "does not exist, using default options.")
+	}
+
 	params := lsp.InitializeParams{
 		ProcessID: int32(os.Getpid()),
 		RootURI:   uri.File(s.root),
 		WorkspaceFolders: []lsp.WorkspaceFolder{
 			{ Name: path.Base(s.root), URI: string(uri.File(s.root)) },
 		},
+		InitializationOptions: options,
 		Capabilities: lsp.ClientCapabilities{
 			Workspace: &lsp.WorkspaceClientCapabilities{
 				WorkspaceEdit: &lsp.WorkspaceClientCapabilitiesWorkspaceEdit{
@@ -258,12 +279,12 @@ func (s *Server) initialize() {
 				ApplyEdit: true,
 			},
 			TextDocument: &lsp.TextDocumentClientCapabilities{
-				Formatting: &lsp.TextDocumentClientCapabilitiesFormatting{
+				Formatting: &lsp.DocumentFormattingClientCapabilities{
 					DynamicRegistration: true,
 				},
 				Completion: &lsp.CompletionTextDocumentClientCapabilities{
 					DynamicRegistration: true,
-					CompletionItem: &lsp.TextDocumentClientCapabilitiesCompletionItem{
+					CompletionItem: &lsp.CompletionTextDocumentClientCapabilitiesItem{
 						SnippetSupport:          false,
 						CommitCharactersSupport: false,
 						DocumentationFormat:     []lsp.MarkupKind{lsp.PlainText},
@@ -278,7 +299,7 @@ func (s *Server) initialize() {
 					PrepareSupport: true,
 					HonorsChangeAnnotations: false,
 				},
-				Hover: &lsp.TextDocumentClientCapabilitiesHover{
+				Hover: &lsp.HoverTextDocumentClientCapabilities{
 					DynamicRegistration: true,
 					ContentFormat:       []lsp.MarkupKind{lsp.PlainText},
 				},

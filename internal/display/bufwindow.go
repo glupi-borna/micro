@@ -545,6 +545,8 @@ func (w *BufWindow) displayBuffer() {
 
 	cursors := b.GetCursors()
 
+	diags := b.GetDiagnostics()
+
 	curStyle := config.DefStyle
 	for ; vloc.Y < w.bufHeight; vloc.Y++ {
 		vloc.X = 0
@@ -643,9 +645,7 @@ func (w *BufWindow) displayBuffer() {
 					}
 
 					for _, c := range cursors {
-						if c.HasSelection() &&
-							(bloc.GreaterEqual(c.CurSelection[0]) && bloc.LessThan(c.CurSelection[1]) ||
-								bloc.LessThan(c.CurSelection[0]) && bloc.GreaterEqual(c.CurSelection[1])) {
+						if c.HasSelection() && bloc.Between(c.CurSelection[0], c.CurSelection[1]) {
 							// The current character is selected
 							style = config.DefStyle.Reverse(true)
 
@@ -664,8 +664,16 @@ func (w *BufWindow) displayBuffer() {
 					}
 
 					for _, m := range b.Messages {
-						if bloc.GreaterEqual(m.Start) && bloc.LessThan(m.End) ||
-							bloc.LessThan(m.End) && bloc.GreaterEqual(m.Start) {
+						if bloc.Between(m.Start, m.End) {
+							style = style.Underline(true)
+							break
+						}
+					}
+
+					for _, m := range diags {
+						start := ToLoc(m.Range.Start)
+						end := ToLoc(m.Range.End)
+						if bloc.Between(start, end) {
 							style = style.Underline(true)
 							break
 						}

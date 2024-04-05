@@ -2,7 +2,6 @@ package lsp
 
 import (
 	"errors"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -35,6 +34,7 @@ type LSPConfigStatic struct {
 	Install     [][]string			`yaml:"install"`
 	Env         map[string]string 	`yaml:"env"`
 	Cwd         string 				`yaml:"cwd"`
+	Options     any					`yaml:"options"`
 }
 
 type LSPConfig struct {
@@ -46,6 +46,7 @@ type LSPConfig struct {
 	Install		Runnable
 	Env			Runnable
 	Cwd			Runnable
+	Options     any
 }
 
 type Runnable interface {
@@ -185,12 +186,12 @@ func Init() error {
 	var err error
 	filename := filepath.Join(config.ConfigDir, "lsp.yaml")
 	if _, e := os.Stat(filename); e == nil {
-		servers, err = ioutil.ReadFile(filename)
+		servers, err = os.ReadFile(filename)
 		if err != nil {
 			servers = servers_internal
 		}
 	} else {
-		err = ioutil.WriteFile(filename, servers_internal, 0644)
+		err = os.WriteFile(filename, servers_internal, 0644)
 		servers = servers_internal
 	}
 
@@ -625,6 +626,7 @@ func LoadConfig(data []byte) (*Config, error) {
 		l.Env = MakeRunnable(l, "Env", lang.Env, false)
 		l.Install = MakeRunnable(l, "Install", lang.Install, false)
 		l.IsInstalled = MakeRunnable(l, "IsInstall", lang.IsInstalled, false)
+		l.Options = lang.Options
 		conf.LSPConfigs = append(conf.LSPConfigs, l)
 	}
 
