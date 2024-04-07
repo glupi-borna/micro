@@ -145,24 +145,21 @@ type SharedBuffer struct {
 func (b *SharedBuffer) insert(pos Loc, value []byte) {
 	b.isModified = true
 	b.HasSuggestions = false
-	pos16 := b.UTF16Pos(pos)
 	b.LineArray.Insert(pos, value)
 
 
 	inslines := bytes.Count(value, []byte{'\n'})
 	b.MarkModified(pos.Y, pos.Y+inslines)
-	b.lspDidChange(pos16, pos16, string(value))
+	b.lspDidChange(pos, pos, string(value))
 }
 func (b *SharedBuffer) remove(start, end Loc) []byte {
 	b.isModified = true
 	b.HasSuggestions = false
 	defer b.MarkModified(start.Y, end.Y)
 
-	start16 := b.UTF16Pos(start)
-	end16 := b.UTF16Pos(end)
 
 	sub := b.LineArray.Remove(start, end)
-	b.lspDidChange(start16, end16, "")
+	b.lspDidChange(start, end, "")
 	return sub
 }
 

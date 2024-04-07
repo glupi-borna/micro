@@ -273,7 +273,7 @@ func LSPComplete(b *Buffer) []Completion {
 	}
 
 	c := b.GetActiveCursor()
-	l := b.UTF16Pos(Loc{c.X, c.Y})
+	l := c
 	pos := l.ToPos()
 
 	fn := func(s *lsp.Server) ([]protocol.CompletionItem, bool) {
@@ -299,7 +299,6 @@ func LSPComplete(b *Buffer) []Completion {
 		if item.TextEdit != nil && len(item.TextEdit.NewText) > 0 {
 			completions[i].Edits = []Delta{{
 				Text:  []byte(item.TextEdit.NewText),
-				// TODO: Convert from utf16
 				Start: loc.ToLoc(item.TextEdit.Range.Start),
 				End:   loc.ToLoc(item.TextEdit.Range.End),
 			}}
@@ -308,7 +307,6 @@ func LSPComplete(b *Buffer) []Completion {
 				for _, e := range item.AdditionalTextEdits {
 					d := Delta{
 						Text:  []byte(e.NewText),
-						// TODO: Convert from utf16
 						Start: loc.ToLoc(e.Range.Start),
 						End:   loc.ToLoc(e.Range.End),
 					}
@@ -349,8 +347,8 @@ func ConvertCompletions(completions, suggestions []string, c *Cursor) []Completi
 		}
 		comp[i].Edits = []Delta{{
 			Text:  []byte(completions[i]),
-			Start: Loc{c.X, c.Y},
-			End:   Loc{c.X, c.Y},
+			Start: c.Loc,
+			End:   c.Loc,
 		}}
 	}
 	return comp

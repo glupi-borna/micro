@@ -240,6 +240,23 @@ func (s *Server) Log(args ...any) {
 	log.Println(tp...)
 }
 
+type PositionEncodingKind string
+
+const (
+	PEK_UTF8  PositionEncodingKind = "utf-8"
+	PEK_UTF16 PositionEncodingKind = "utf-16"
+	PEK_UTF32 PositionEncodingKind = "utf-32"
+)
+
+type LSPInitGeneral struct {
+	PositionEncodings []PositionEncodingKind `json:"positionEncodings,omitempty"`
+}
+
+type LSPInit struct {
+	lsp.InitializeParams
+	General LSPInitGeneral `json:"general,omitempty"`
+}
+
 // initialize performs the LSP initialization handshake
 // The directory must be an absolute path
 func (s *Server) initialize() {
@@ -263,47 +280,52 @@ func (s *Server) initialize() {
 		s.Log(config_path, "does not exist, using default options.")
 	}
 
-	params := lsp.InitializeParams{
-		ProcessID: int32(os.Getpid()),
-		RootURI:   uri.File(s.root),
-		WorkspaceFolders: []lsp.WorkspaceFolder{
-			{ Name: path.Base(s.root), URI: string(uri.File(s.root)) },
-		},
-		InitializationOptions: options,
-		Capabilities: lsp.ClientCapabilities{
-			Workspace: &lsp.WorkspaceClientCapabilities{
-				WorkspaceEdit: &lsp.WorkspaceClientCapabilitiesWorkspaceEdit{
-					DocumentChanges:    true,
-					ResourceOperations: []string{"create", "rename", "delete"},
-				},
-				ApplyEdit: true,
+	params := LSPInit{
+		InitializeParams: lsp.InitializeParams{
+			ProcessID: int32(os.Getpid()),
+			RootURI:   uri.File(s.root),
+			WorkspaceFolders: []lsp.WorkspaceFolder{
+				{ Name: path.Base(s.root), URI: string(uri.File(s.root)) },
 			},
-			TextDocument: &lsp.TextDocumentClientCapabilities{
-				Formatting: &lsp.DocumentFormattingClientCapabilities{
-					DynamicRegistration: true,
-				},
-				Completion: &lsp.CompletionTextDocumentClientCapabilities{
-					DynamicRegistration: true,
-					CompletionItem: &lsp.CompletionTextDocumentClientCapabilitiesItem{
-						SnippetSupport:          false,
-						CommitCharactersSupport: false,
-						DocumentationFormat:     []lsp.MarkupKind{lsp.PlainText},
-						DeprecatedSupport:       false,
-						PreselectSupport:        false,
-						InsertReplaceSupport:    false,
+			InitializationOptions: options,
+			Capabilities: lsp.ClientCapabilities{
+				Workspace: &lsp.WorkspaceClientCapabilities{
+					WorkspaceEdit: &lsp.WorkspaceClientCapabilitiesWorkspaceEdit{
+						DocumentChanges:    true,
+						ResourceOperations: []string{"create", "rename", "delete"},
 					},
-					ContextSupport: false,
+					ApplyEdit: true,
 				},
-				Rename: &lsp.RenameClientCapabilities{
-					DynamicRegistration: true,
-					PrepareSupport: true,
-					HonorsChangeAnnotations: false,
-				},
-				Hover: &lsp.HoverTextDocumentClientCapabilities{
-					DynamicRegistration: true,
-					ContentFormat:       []lsp.MarkupKind{lsp.PlainText},
+				TextDocument: &lsp.TextDocumentClientCapabilities{
+					Formatting: &lsp.DocumentFormattingClientCapabilities{
+						DynamicRegistration: true,
+					},
+					Completion: &lsp.CompletionTextDocumentClientCapabilities{
+						DynamicRegistration: true,
+						CompletionItem: &lsp.CompletionTextDocumentClientCapabilitiesItem{
+							SnippetSupport:          false,
+							CommitCharactersSupport: false,
+							DocumentationFormat:     []lsp.MarkupKind{lsp.PlainText},
+							DeprecatedSupport:       false,
+							PreselectSupport:        false,
+							InsertReplaceSupport:    false,
+						},
+						ContextSupport: false,
+					},
+					Rename: &lsp.RenameClientCapabilities{
+						DynamicRegistration: true,
+						PrepareSupport: true,
+						HonorsChangeAnnotations: false,
+					},
+					Hover: &lsp.HoverTextDocumentClientCapabilities{
+						DynamicRegistration: true,
+						ContentFormat:       []lsp.MarkupKind{lsp.PlainText},
+					},
 				},
 			},
+		},
+		General: LSPInitGeneral{
+			PositionEncodings: []PositionEncodingKind{PEK_UTF8},
 		},
 	}
 
