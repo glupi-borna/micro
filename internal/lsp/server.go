@@ -297,6 +297,7 @@ func (s *Server) initialize() {
 					ApplyEdit: true,
 				},
 				TextDocument: &lsp.TextDocumentClientCapabilities{
+					PublishDiagnostics: &lsp.PublishDiagnosticsClientCapabilities{},
 					Formatting: &lsp.DocumentFormattingClientCapabilities{
 						DynamicRegistration: true,
 					},
@@ -309,6 +310,9 @@ func (s *Server) initialize() {
 							DeprecatedSupport:       false,
 							PreselectSupport:        false,
 							InsertReplaceSupport:    false,
+							InsertTextModeSupport: &lsp.CompletionTextDocumentClientCapabilitiesItemInsertTextModeSupport {
+								ValueSet: []lsp.InsertTextMode{ 1 },
+							},
 						},
 						ContextSupport: false,
 					},
@@ -438,6 +442,8 @@ func (s *Server) receive() {
 			continue
 		}
 
+		s.Log("Got RPC message", r.Method)
+
 		switch r.Method {
 		case lsp.MethodWindowLogMessage:
 			// TODO
@@ -447,10 +453,11 @@ func (s *Server) receive() {
 			var diag RPCDiag
 			err = json.Unmarshal(resp, &diag)
 			if err != nil {
-				s.Log(err)
+				s.Log("Diagnostics error:", err)
 				continue
 			}
 			fileuri := uri.URI(string(diag.Params.URI))
+			s.Log("Got diagnostics", fileuri, diag.Params.Diagnostics)
 			s.storeDiagnostics(fileuri, convertDiagnostics(s, diag.Params.Diagnostics))
 		case "":
 			// Response
