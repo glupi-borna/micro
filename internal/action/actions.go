@@ -2051,6 +2051,12 @@ func (h *BufPane) ApplyWorkspaceEdits(edit protocol.WorkspaceEdit) {
 	}
 }
 
+func (h *BufPane) LSPResync() bool {
+	if !h.Buf.HasLSP() { return false }
+	h.Buf.LSPResync()
+	return true
+}
+
 // AutoFormat automatically formats the document using LSP
 func (h *BufPane) AutoFormat() bool {
 	if !h.Buf.HasLSP() {

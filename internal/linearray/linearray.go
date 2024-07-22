@@ -197,7 +197,8 @@ func (la *LineArray) Bytes() []byte {
 	b := new(bytes.Buffer)
 	// initsize should provide a good estimate
 	b.Grow(int(la.initsize + 4096))
-	for i, l := range la.lines {
+	for i := range la.lines {
+		l := &la.lines[i]
 		b.Write(l.data)
 		if i != len(la.lines)-1 {
 			if la.Endings == FFDos {
@@ -207,11 +208,6 @@ func (la *LineArray) Bytes() []byte {
 		}
 	}
 	return b.Bytes()
-}
-
-func (la *LineArray) UTF16Pos(pos Loc) Loc {
-	line_str := string(la.Line(pos.Y))[:pos.X]
-	return Loc{util.UTF16Length(line_str), pos.Y}
 }
 
 // newlineBelow adds a newline below the given line number

@@ -59,6 +59,12 @@ func (l Loc) LessEqual(b Loc) bool {
 	return l == b
 }
 
+// Between is a shorthand for a common operation.
+// (GreaterEqual(a) && LessThan(b)) || (GreaterEqual(b) && LessThan(a))
+func (l Loc) Between(a Loc, b Loc) bool {
+	return (l.GreaterEqual(a) && l.LessThan(b)) || (l.GreaterEqual(b) && l.LessThan(a))
+}
+
 // Equal returns true if two locs are equal
 func (l Loc) Equal(b Loc) bool {
 	return l.Y == b.Y && l.X == b.X

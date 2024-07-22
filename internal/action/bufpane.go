@@ -833,6 +833,7 @@ var BufKeyActions = map[string]BufKeyAction{
 	"ClearInfo":                 (*BufPane).ClearInfo,
 	"SemanticInfo":              (*BufPane).Tooltip,
 	"Tooltip":                   (*BufPane).Tooltip,
+	"LSPResync":                 (*BufPane).LSPResync,
 	"AutoFormat":                (*BufPane).AutoFormat,
 	"None":                      (*BufPane).None,
 

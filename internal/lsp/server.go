@@ -46,26 +46,6 @@ func (s STATE) String() string {
 	return "unknown(" + fmt.Sprint(int(s)) + ")"
 }
 
-func (s *Server) state_guard(states ...STATE) error {
-	for _, state := range states {
-		if s.State == state { return nil }
-	}
-
-	states_string := ""
-	last := len(states)-1
-	for i, state := range states {
-		if i != 0 && i != last {
-			states_string += ", "
-		} else if i != 0 && i == last {
-			states_string += " or "
-		}
-
-		states_string += state.String()
-	}
-
-	return errors.New("Expected state to be " + states_string + ", but " + s.language.Name + " is " + s.State.String())
-}
-
 var servers map[string]*Server
 var slock sync.Mutex
 
@@ -174,6 +154,26 @@ func env_to_strs(env map[string]string) []string {
 	return out
 }
 
+func (s *Server) state_guard(states ...STATE) error {
+	for _, state := range states {
+		if s.State == state { return nil }
+	}
+
+	states_string := ""
+	last := len(states)-1
+	for i, state := range states {
+		if i != 0 && i != last {
+			states_string += ", "
+		} else if i != 0 && i == last {
+			states_string += " or "
+		}
+
+		states_string += state.String()
+	}
+
+	return errors.New("Expected state to be " + states_string + ", but " + s.language.Name + " is " + s.State.String())
+}
+
 func (s *Server) runCommand() error {
 	if err := s.state_guard(STATE_CREATED) ; err != nil { return err }
 	if s.cmd != nil { return errors.New(s.language.Name + " is already running.") }
@@ -240,49 +240,96 @@ func (s *Server) Log(args ...any) {
 	log.Println(tp...)
 }
 
+type PositionEncodingKind string
+
+const (
+	PEK_UTF8  PositionEncodingKind = "utf-8"
+	PEK_UTF16 PositionEncodingKind = "utf-16"
+	PEK_UTF32 PositionEncodingKind = "utf-32"
+)
+
+type LSPInitGeneral struct {
+	PositionEncodings []PositionEncodingKind `json:"positionEncodings,omitempty"`
+}
+
+type LSPInit struct {
+	lsp.InitializeParams
+	General LSPInitGeneral `json:"general,omitempty"`
+}
+
 // initialize performs the LSP initialization handshake
 // The directory must be an absolute path
 func (s *Server) initialize() {
-	params := lsp.InitializeParams{
-		ProcessID: int32(os.Getpid()),
-		RootURI:   uri.File(s.root),
-		WorkspaceFolders: []lsp.WorkspaceFolder{
-			{ Name: path.Base(s.root), URI: string(uri.File(s.root)) },
-		},
-		Capabilities: lsp.ClientCapabilities{
-			Workspace: &lsp.WorkspaceClientCapabilities{
-				WorkspaceEdit: &lsp.WorkspaceClientCapabilitiesWorkspaceEdit{
-					DocumentChanges:    true,
-					ResourceOperations: []string{"create", "rename", "delete"},
-				},
-				ApplyEdit: true,
+	var options any = s.language.Options
+
+	config_path := path.Join(s.root, s.language.Name + ".mlsp.json")
+	if _, err := os.Stat(config_path); !errors.Is(err, os.ErrNotExist) {
+		data, err := os.ReadFile(config_path)
+		if err == nil {
+			var new_options any = make(map[string]any)
+			err := json.Unmarshal(data, &new_options)
+			if err == nil {
+				options = new_options
+			} else {
+				s.Log("Failed to parse config at", config_path)
+			}
+		} else {
+			s.Log("Failed to read config at", config_path)
+		}
+	} else {
+		s.Log(config_path, "does not exist, using default options.")
+	}
+
+	params := LSPInit{
+		InitializeParams: lsp.InitializeParams{
+			ProcessID: int32(os.Getpid()),
+			RootURI:   uri.File(s.root),
+			WorkspaceFolders: []lsp.WorkspaceFolder{
+				{ Name: path.Base(s.root), URI: string(uri.File(s.root)) },
 			},
-			TextDocument: &lsp.TextDocumentClientCapabilities{
-				Formatting: &lsp.TextDocumentClientCapabilitiesFormatting{
-					DynamicRegistration: true,
-				},
-				Completion: &lsp.CompletionTextDocumentClientCapabilities{
-					DynamicRegistration: true,
-					CompletionItem: &lsp.TextDocumentClientCapabilitiesCompletionItem{
-						SnippetSupport:          false,
-						CommitCharactersSupport: false,
-						DocumentationFormat:     []lsp.MarkupKind{lsp.PlainText},
-						DeprecatedSupport:       false,
-						PreselectSupport:        false,
-						InsertReplaceSupport:    false,
+			InitializationOptions: options,
+			Capabilities: lsp.ClientCapabilities{
+				Workspace: &lsp.WorkspaceClientCapabilities{
+					WorkspaceEdit: &lsp.WorkspaceClientCapabilitiesWorkspaceEdit{
+						DocumentChanges:    true,
+						ResourceOperations: []string{"create", "rename", "delete"},
 					},
-					ContextSupport: false,
+					ApplyEdit: true,
 				},
-				Rename: &lsp.RenameClientCapabilities{
-					DynamicRegistration: true,
-					PrepareSupport: true,
-					HonorsChangeAnnotations: false,
-				},
-				Hover: &lsp.TextDocumentClientCapabilitiesHover{
-					DynamicRegistration: true,
-					ContentFormat:       []lsp.MarkupKind{lsp.PlainText},
+				TextDocument: &lsp.TextDocumentClientCapabilities{
+					PublishDiagnostics: &lsp.PublishDiagnosticsClientCapabilities{},
+					Formatting: &lsp.DocumentFormattingClientCapabilities{
+						DynamicRegistration: true,
+					},
+					Completion: &lsp.CompletionTextDocumentClientCapabilities{
+						DynamicRegistration: true,
+						CompletionItem: &lsp.CompletionTextDocumentClientCapabilitiesItem{
+							SnippetSupport:          false,
+							CommitCharactersSupport: false,
+							DocumentationFormat:     []lsp.MarkupKind{lsp.PlainText},
+							DeprecatedSupport:       false,
+							PreselectSupport:        false,
+							InsertReplaceSupport:    false,
+							InsertTextModeSupport: &lsp.CompletionTextDocumentClientCapabilitiesItemInsertTextModeSupport {
+								ValueSet: []lsp.InsertTextMode{ 1 },
+							},
+						},
+						ContextSupport: false,
+					},
+					Rename: &lsp.RenameClientCapabilities{
+						DynamicRegistration: true,
+						PrepareSupport: true,
+						HonorsChangeAnnotations: false,
+					},
+					Hover: &lsp.HoverTextDocumentClientCapabilities{
+						DynamicRegistration: true,
+						ContentFormat:       []lsp.MarkupKind{lsp.PlainText},
+					},
 				},
 			},
+		},
+		General: LSPInitGeneral{
+			PositionEncodings: []PositionEncodingKind{PEK_UTF8},
 		},
 	}
 
@@ -395,6 +442,8 @@ func (s *Server) receive() {
 			continue
 		}
 
+		s.Log("Got RPC message", r.Method)
+
 		switch r.Method {
 		case lsp.MethodWindowLogMessage:
 			// TODO
@@ -404,10 +453,11 @@ func (s *Server) receive() {
 			var diag RPCDiag
 			err = json.Unmarshal(resp, &diag)
 			if err != nil {
-				s.Log(err)
+				s.Log("Diagnostics error:", err)
 				continue
 			}
 			fileuri := uri.URI(string(diag.Params.URI))
+			s.Log("Got diagnostics", fileuri, diag.Params.Diagnostics)
 			s.storeDiagnostics(fileuri, convertDiagnostics(s, diag.Params.Diagnostics))
 		case "":
 			// Response
