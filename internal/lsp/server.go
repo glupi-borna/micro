@@ -472,6 +472,9 @@ func (s *Server) receive() {
 func Style(d *Diagnostic) tcell.Style {
 	switch d.Severity {
 	case lsp.DiagnosticSeverityInformation:
+		if style, ok := config.Colorscheme["gutter-info"]; ok {
+			return style
+		}
 	case lsp.DiagnosticSeverityHint:
 		if style, ok := config.Colorscheme["gutter-info"]; ok {
 			return style
