@@ -730,8 +730,15 @@ func (b *Buffer) GetRenameSymbol() (string, *lsp.Server, error) {
 				UseDefault: true,
 			}
 			rpcerr, ok := err.(*lsp.RPCError)
-			if !ok || rpcerr.LSPError.Code != lsp.MethodNotFound {
+			if !ok {
 				WriteLogLn(
+					s.GetLanguage().Name,
+					"ERROR - GetRenameSymbol:",
+					err.Error(),
+				)
+			} else if rpcerr.LSPError.Code != lsp.MethodNotFound {
+				WriteLogLn(
+					s.GetLanguage().Name,
 					"RPC ERROR - GetRenameSymbol:",
 					rpcerr.LSPError.Code.String(),
 					rpcerr.LSPError.Message)
