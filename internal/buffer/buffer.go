@@ -559,15 +559,27 @@ func (b *Buffer) LSPResync() {
 	var wg sync.WaitGroup
 	ft := lsp.Filetype(b.Settings["filetype"].(string))
 	b.version++
+
 	for _, s := range b.ActiveServers() {
 		server := s
 		wg.Add(1)
 		go func() {
 			server.DidClose(b.AbsPath)
+			wg.Done()
+		}()
+	}
+
+	wg.Wait()
+
+	for _, s := range b.ActiveServers() {
+		server := s
+		wg.Add(1)
+		go func() {
 			server.DidOpen(b.AbsPath, ft, string(b.Bytes()), b.version)
 			wg.Done()
 		}()
 	}
+
 	wg.Wait()
 }
 
